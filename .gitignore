@@ -2,3 +2,13 @@ livehub_app/.vscode/settings.json
 
 # macOS Spotlight Search index file
 *.DS_Store
+
+# LiveHub generated artifacts and caches
+livehub_app/build/
+livehub_app/.dart_tool/
+livehub_app/windows/flutter/ephemeral/
+livehub_app/.flutter-plugins
+livehub_app/.flutter-plugins-dependencies
+
+livehub_core/build/
+livehub_core/.dart_tool/
