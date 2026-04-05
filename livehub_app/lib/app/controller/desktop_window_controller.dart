@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -55,6 +56,7 @@ class DesktopWindowController extends GetxController with WindowListener {
     if (isWindowsDesktop) {
       windowManager.addListener(this);
       syncWindowState();
+      unawaited(ensureCustomWindowChrome());
     }
   }
 
@@ -118,10 +120,7 @@ class DesktopWindowController extends GetxController with WindowListener {
     if (!isWindowsDesktop) {
       return;
     }
-    await windowManager.setTitleBarStyle(
-      TitleBarStyle.hidden,
-      windowButtonVisibility: false,
-    );
+    await windowManager.setAsFrameless();
     if (_lastWindowBackgroundColor != null) {
       await windowManager.setBackgroundColor(_lastWindowBackgroundColor!);
     }

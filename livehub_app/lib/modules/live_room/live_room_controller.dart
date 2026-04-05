@@ -16,9 +16,12 @@ import 'package:livehub_app/app/version_utils.dart';
 import 'package:livehub_app/models/db/follow_user.dart';
 import 'package:livehub_app/models/db/history.dart';
 import 'package:livehub_app/modules/live_room/follow_history_panel.dart';
+import 'package:livehub_app/modules/live_room/live_room_diagnostic_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_error_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_metric_utils.dart';
+import 'package:livehub_app/modules/live_room/live_room_playback_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_performance_utils.dart';
+import 'package:livehub_app/modules/live_room/live_room_reset_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_sidebar_tab_utils.dart';
 import 'package:livehub_app/modules/live_room/player/player_controller.dart';
 import 'package:livehub_app/modules/live_room/super_chat_utils.dart';
@@ -126,7 +129,9 @@ class LiveRoomController extends PlayerController
     }
     initAutoExit();
     showDanmakuState.value = AppSettingsController.instance.danmuEnable.value;
-    followed.value = DBService.instance.getFollowExist("${site.id}_$roomId");
+    followed.value = DBService.instance.getFollowExist(
+      buildLiveRoomRecordId(site.id, roomId),
+    );
     loadData();
 
     scrollController.addListener(scrollListener);
@@ -457,10 +462,12 @@ class LiveRoomController extends PlayerController
           rxRoomId.value = detail.value!.roomId;
           if (followed.value) {
             // 更新关注列表
-            DBService.instance.deleteFollow("${site.id}_$oldId");
+            DBService.instance.deleteFollow(
+              buildLiveRoomRecordId(site.id, oldId),
+            );
             DBService.instance.addFollow(
               FollowUser(
-                id: "${site.id}_$roomId",
+                id: buildLiveRoomRecordId(site.id, roomId),
                 roomId: roomId,
                 siteId: site.id,
                 userName: detail.value!.userName,
@@ -470,7 +477,9 @@ class LiveRoomController extends PlayerController
             );
           } else {
             followed.value =
-                DBService.instance.getFollowExist("${site.id}_$roomId");
+                DBService.instance.getFollowExist(
+                  buildLiveRoomRecordId(site.id, roomId),
+                );
           }
         }
       }
@@ -479,7 +488,9 @@ class LiveRoomController extends PlayerController
 
       addHistory();
       // 确认房间关注状态
-      followed.value = DBService.instance.getFollowExist("${site.id}_$roomId");
+      followed.value = DBService.instance.getFollowExist(
+        buildLiveRoomRecordId(site.id, roomId),
+      );
       if (site.id == Constant.kBiliBili) {
         online.value = detail.value!.online;
         roomAudienceText.value = detail.value!.watchedText ?? "";
@@ -539,19 +550,11 @@ class LiveRoomController extends PlayerController
         return;
       }
       qualites.value = playQualites;
-      var qualityLevel = await getQualityLevel();
-      if (qualityLevel == 2) {
-        //最高
-        currentQuality = 0;
-      } else if (qualityLevel == 0) {
-        //最低
-        currentQuality = playQualites.length - 1;
-      } else {
-        //中间值
-        int middle = (playQualites.length / 2).floor();
-        currentQuality = middle;
-      }
-
+      final qualityLevel = await getQualityLevel();
+      currentQuality = resolveInitialQualityIndex(
+        qualityCount: playQualites.length,
+        qualityLevel: qualityLevel,
+      );
       getPlayUrl(loadToken: loadToken);
     } catch (e) {
       if (loadToken != null && !_isCurrentRoomLoadToken(loadToken)) {
@@ -587,7 +590,7 @@ class LiveRoomController extends PlayerController
     playUrls.value = playUrl.urls;
     playHeaders = playUrl.headers;
     currentLineIndex = 0;
-    currentLineInfo.value = "线路${currentLineIndex + 1}";
+    currentLineInfo.value = buildLiveRoomLineLabel(currentLineIndex);
     //重置错误次数
     mediaErrorRetryCount = 0;
     initPlaylist();
@@ -601,16 +604,13 @@ class LiveRoomController extends PlayerController
   }
 
   void initPlaylist() async {
-    currentLineInfo.value = "线路${currentLineIndex + 1}";
+    currentLineInfo.value = buildLiveRoomLineLabel(currentLineIndex);
     errorMsg.value = "";
 
-    final mediaList = playUrls.map((url) {
-      var finalUrl = url;
-      if (AppSettingsController.instance.playerForceHttps.value) {
-        finalUrl = finalUrl.replaceAll("http://", "https://");
-      }
-      return Media(finalUrl, httpHeaders: playHeaders);
-    }).toList();
+    final mediaList = normalizePlaybackUrls(
+      playUrls,
+      forceHttps: AppSettingsController.instance.playerForceHttps.value,
+    ).map((url) => Media(url, httpHeaders: playHeaders)).toList();
 
     // 初始化播放器并设置 ao 参数
     await initializePlayer();
@@ -619,7 +619,7 @@ class LiveRoomController extends PlayerController
   }
 
   void setPlayer() async {
-    currentLineInfo.value = "线路${currentLineIndex + 1}";
+    currentLineInfo.value = buildLiveRoomLineLabel(currentLineIndex);
     errorMsg.value = "";
 
     await player.jump(currentLineIndex);
@@ -628,13 +628,13 @@ class LiveRoomController extends PlayerController
   @override
   void mediaEnd() async {
     super.mediaEnd();
-    if (mediaErrorRetryCount < 2) {
+    if (shouldRetryPlayback(retryCount: mediaErrorRetryCount)) {
       Log.d("播放结束，尝试第${mediaErrorRetryCount + 1}次刷新");
-      if (mediaErrorRetryCount == 1) {
-        //延迟一秒再刷新
-        await Future.delayed(const Duration(seconds: 1));
+      final retryDelay = resolvePlaybackRetryDelay(mediaErrorRetryCount);
+      if (retryDelay > Duration.zero) {
+        await Future.delayed(retryDelay);
       }
-      mediaErrorRetryCount += 1;
+      mediaErrorRetryCount = nextPlaybackRetryCount(mediaErrorRetryCount);
       //刷新一次
       setPlayer();
       return;
@@ -642,7 +642,10 @@ class LiveRoomController extends PlayerController
 
     Log.d("播放结束");
     // 遍历线路，如果全部链接都断开就是直播结束了
-    if (playUrls.length - 1 == currentLineIndex) {
+    if (!hasNextPlayLine(
+      currentLineIndex: currentLineIndex,
+      playUrlCount: playUrls.length,
+    )) {
       liveStatus.value = false;
     } else {
       changePlayLine(currentLineIndex + 1);
@@ -655,19 +658,22 @@ class LiveRoomController extends PlayerController
   @override
   void mediaError(String error) async {
     super.mediaEnd();
-    if (mediaErrorRetryCount < 2) {
+    if (shouldRetryPlayback(retryCount: mediaErrorRetryCount)) {
       Log.d("播放失败，尝试第${mediaErrorRetryCount + 1}次刷新");
-      if (mediaErrorRetryCount == 1) {
-        //延迟一秒再刷新
-        await Future.delayed(const Duration(seconds: 1));
+      final retryDelay = resolvePlaybackRetryDelay(mediaErrorRetryCount);
+      if (retryDelay > Duration.zero) {
+        await Future.delayed(retryDelay);
       }
-      mediaErrorRetryCount += 1;
+      mediaErrorRetryCount = nextPlaybackRetryCount(mediaErrorRetryCount);
       //刷新一次
       setPlayer();
       return;
     }
 
-    if (playUrls.length - 1 == currentLineIndex) {
+    if (!hasNextPlayLine(
+      currentLineIndex: currentLineIndex,
+      playUrlCount: playUrls.length,
+    )) {
       errorMsg.value = "播放失败";
       SmartDialog.showToast("播放失败:$error");
     } else {
@@ -717,7 +723,7 @@ class LiveRoomController extends PlayerController
     if (detail.value == null) {
       return;
     }
-    var id = "${site.id}_$roomId";
+    var id = buildLiveRoomRecordId(site.id, roomId);
     var history = DBService.instance.getHistory(id);
     if (history != null) {
       history.updateTime = DateTime.now();
@@ -739,7 +745,7 @@ class LiveRoomController extends PlayerController
     if (detail.value == null) {
       return;
     }
-    var id = "${site.id}_$roomId";
+    var id = buildLiveRoomRecordId(site.id, roomId);
     DBService.instance.addFollow(
       FollowUser(
         id: id,
@@ -763,7 +769,7 @@ class LiveRoomController extends PlayerController
       return;
     }
 
-    var id = "${site.id}_$roomId";
+    var id = buildLiveRoomRecordId(site.id, roomId);
     DBService.instance.deleteFollow(id);
     followed.value = false;
     EventBus.instance.emit(Constant.kUpdateFollow, id);
@@ -1087,18 +1093,24 @@ class LiveRoomController extends PlayerController
   }
 
   void resetRoom(Site site, String roomId) async {
-    if (this.site == site && this.roomId == roomId) {
+    final switchPlan = resolveLiveRoomSwitchPlan(
+      currentSiteId: this.site.id,
+      currentRoomId: this.roomId,
+      nextSiteId: site.id,
+      nextRoomId: roomId,
+      currentSidebarTab: sidebarTab.value,
+    );
+    if (!switchPlan.shouldReset) {
       return;
     }
 
     _roomLoadToken += 1;
     rxSite.value = site;
     rxRoomId.value = roomId;
-    sidebarTab.value = resolveLiveRoomSidebarTabForSite(
-      sidebarTab.value,
-      hasSuperChatTab: site.id == Constant.kBiliBili,
+    sidebarTab.value = switchPlan.nextSidebarTab;
+    followed.value = DBService.instance.getFollowExist(
+      switchPlan.nextFollowLookupKey,
     );
-    followed.value = DBService.instance.getFollowExist("${site.id}_$roomId");
 
     // 清除全部消息
     liveDanmaku.stop();
@@ -1128,20 +1140,25 @@ class LiveRoomController extends PlayerController
 
   String buildErrorDetailText() {
     final presentation = errorPresentation;
-    return '''应用版本：${VersionUtils.buildDetailedVersion(Utils.packageInfo.version, Utils.packageInfo.buildNumber)}
-时间：${DateTime.now().toIso8601String()}
-直播平台：${rxSite.value.name}
-房间号：${rxRoomId.value}
-房间标题：${detail.value?.title ?? "-"}
-主播：${detail.value?.userName ?? "-"}
-观看信息：${roomAudienceText.value.isNotEmpty ? roomAudienceText.value : online.value}
-错误分类：${presentation.title}（${presentation.type}）
-问题概述：${presentation.summary}
-建议处理：${presentation.suggestion}
-错误信息：
-${error?.toString()}
-----------------
-${errorStackTrace?.toString() ?? ""}''';
+    return buildLiveRoomErrorDetailText(
+      appVersion: VersionUtils.buildDetailedVersion(
+        Utils.packageInfo.version,
+        Utils.packageInfo.buildNumber,
+      ),
+      generatedAt: DateTime.now(),
+      siteName: rxSite.value.name,
+      roomId: rxRoomId.value,
+      roomTitle: detail.value?.title,
+      anchor: detail.value?.userName,
+      roomAudienceText: roomAudienceText.value,
+      online: online.value,
+      errorTitle: presentation.title,
+      errorType: presentation.type,
+      errorSummary: presentation.summary,
+      errorSuggestion: presentation.suggestion,
+      rawError: error?.toString(),
+      rawStackTrace: errorStackTrace?.toString(),
+    );
   }
 
   void copyErrorDetail() {
@@ -1153,39 +1170,41 @@ ${errorStackTrace?.toString() ?? ""}''';
   }
 
   Future<void> exportRoomDiagnosticBundle() async {
+    final presentation = errorPresentation;
+    final playerSetting = buildLiveRoomPlayerSettingContext(
+      customPlayerOutput:
+          AppSettingsController.instance.customPlayerOutput.value,
+      videoOutputDriver:
+          AppSettingsController.instance.videoOutputDriver.value,
+      audioOutputDriver:
+          AppSettingsController.instance.audioOutputDriver.value,
+      videoHardwareDecoder:
+          AppSettingsController.instance.videoHardwareDecoder.value,
+      logEnabled: AppSettingsController.instance.logEnable.value,
+      scaleMode: AppSettingsController.instance.scaleMode.value,
+    );
+
     await DiagnosticService.exportDiagnosticBundle(
       fileNamePrefix: "livehub_room_${site.id}_$roomId",
-      contextData: <String, dynamic>{
-        'scope': 'live_room',
-        'siteId': site.id,
-        'siteName': site.name,
-        'roomId': roomId,
-        'roomTitle': detail.value?.title,
-        'anchor': detail.value?.userName,
-        'url': detail.value?.url,
-        'liveStatus': liveStatus.value,
-        'currentQuality': currentQualityInfo.value,
-        'currentLine': currentLineInfo.value,
-        'online': online.value,
-        'roomAudienceText': roomAudienceText.value,
-        'errorType': errorPresentation.type,
-        'errorTitle': errorPresentation.title,
-        'errorSummary': errorPresentation.summary,
-        'errorSuggestion': errorPresentation.suggestion,
-        'playerSetting': <String, dynamic>{
-          'customPlayerOutput':
-              AppSettingsController.instance.customPlayerOutput.value,
-          'videoOutputDriver':
-              AppSettingsController.instance.videoOutputDriver.value,
-          'audioOutputDriver':
-              AppSettingsController.instance.audioOutputDriver.value,
-          'videoHardwareDecoder':
-              AppSettingsController.instance.videoHardwareDecoder.value,
-          'logEnabled': AppSettingsController.instance.logEnable.value,
-          'scaleMode': AppSettingsController.instance.scaleMode.value,
-        },
-        'errorDetail': buildErrorDetailText(),
-      },
+      contextData: buildLiveRoomDiagnosticContext(
+        siteId: site.id,
+        siteName: site.name,
+        roomId: roomId,
+        roomTitle: detail.value?.title,
+        anchor: detail.value?.userName,
+        url: detail.value?.url,
+        liveStatus: liveStatus.value,
+        currentQuality: currentQualityInfo.value,
+        currentLine: currentLineInfo.value,
+        online: online.value,
+        roomAudienceText: roomAudienceText.value,
+        errorType: presentation.type,
+        errorTitle: presentation.title,
+        errorSummary: presentation.summary,
+        errorSuggestion: presentation.suggestion,
+        playerSetting: playerSetting,
+        errorDetail: buildErrorDetailText(),
+      ),
     );
   }
 

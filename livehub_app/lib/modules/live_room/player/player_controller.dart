@@ -11,6 +11,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:livehub_app/app/controller/app_settings_controller.dart';
 import 'package:livehub_app/app/controller/base_controller.dart';
+import 'package:livehub_app/app/controller/desktop_window_controller.dart';
 import 'package:livehub_app/app/log.dart';
 import 'package:livehub_app/app/utils.dart';
 import 'package:livehub_app/modules/live_room/player/player_performance_utils.dart';
@@ -286,6 +287,9 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
   }) async {
     try {
       await windowManager.setFullScreen(false);
+      if (Get.isRegistered<DesktopWindowController>()) {
+        await Get.find<DesktopWindowController>().ensureCustomWindowChrome();
+      }
       nativeFullScreenState.value = false;
       if (!keepFillWindow) {
         fullScreenState.value = false;
