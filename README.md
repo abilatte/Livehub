@@ -36,7 +36,6 @@ LiveHub 是基于上游项目 `xiaoyaocz/dart_simple_live` 整理后的 Windows 
 
 - `livehub_core` 项目核心库，实现获取各个网站的信息及弹幕。
 - `livehub_app` 基于核心库实现的 Windows 桌面客户端。
-- `archive/versions` 存放旧版本快照和历史参考目录，默认仅作归档保留。
 
 ## 当前产品方向
 
