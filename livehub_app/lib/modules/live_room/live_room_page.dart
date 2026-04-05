@@ -93,7 +93,8 @@ class LiveRoomPage extends GetView<LiveRoomController> {
   Widget build(BuildContext context) {
     final page = Obx(
       () {
-        if (controller.loadError.value) {
+        late final Widget content;
+        if (controller.loadError.value && !controller.isRoomSwitching.value) {
           final errorPresentation = controller.errorPresentation;
           final errorBody = Padding(
             padding: AppStyle.edgeInsetsA12,
@@ -167,7 +168,7 @@ class LiveRoomPage extends GetView<LiveRoomController> {
               ],
             ),
           );
-          return Scaffold(
+          content = Scaffold(
             body: Column(
               children: [
                 buildDesktopTitleBar(context),
@@ -175,9 +176,8 @@ class LiveRoomPage extends GetView<LiveRoomController> {
               ],
             ),
           );
-        }
-        if (controller.nativeFullScreenState.value) {
-          return PopScope(
+        } else if (controller.nativeFullScreenState.value) {
+          content = PopScope(
             canPop: false,
             onPopInvokedWithResult: (e, r) {
               controller.exitNativeFullScreen();
@@ -187,11 +187,76 @@ class LiveRoomPage extends GetView<LiveRoomController> {
             ),
           );
         } else {
-          return buildPageUI();
+          content = buildPageUI();
         }
+
+        if (!controller.isRoomSwitching.value) {
+          return content;
+        }
+
+        return Stack(
+          children: [
+            content,
+            buildRoomSwitchingOverlay(context),
+          ],
+        );
       },
     );
     return page;
+  }
+
+  Widget buildRoomSwitchingOverlay(BuildContext context) {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black.withAlpha(90),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            margin: AppStyle.edgeInsetsH12,
+            padding: AppStyle.edgeInsetsA16,
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: AppStyle.radius8,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(20),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (controller.switchingSiteLogo.value.isNotEmpty) ...[
+                  Image.asset(
+                    controller.switchingSiteLogo.value,
+                    width: 28,
+                    height: 28,
+                  ),
+                  AppStyle.vGap12,
+                ],
+                const CircularProgressIndicator(strokeWidth: 2.8),
+                AppStyle.vGap12,
+                Text(
+                  "正在切换直播间",
+                  style: Theme.of(context).textTheme.titleSmall,
+                  textAlign: TextAlign.center,
+                ),
+                AppStyle.vGap4,
+                Text(
+                  controller.switchingRoomLabel.value,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget buildPageUI() {

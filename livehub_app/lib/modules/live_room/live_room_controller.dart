@@ -119,6 +119,9 @@ class LiveRoomController extends PlayerController
   Timer? _liveDurationTimer;
   int _roomLoadToken = 0;
   bool _chatScrollScheduled = false;
+  final isRoomSwitching = false.obs;
+  final switchingRoomLabel = ''.obs;
+  final switchingSiteLogo = ''.obs;
 
   @override
   void onInit() {
@@ -132,7 +135,7 @@ class LiveRoomController extends PlayerController
     followed.value = DBService.instance.getFollowExist(
       buildLiveRoomRecordId(site.id, roomId),
     );
-    loadData();
+    unawaited(loadData());
 
     scrollController.addListener(scrollListener);
 
@@ -209,7 +212,7 @@ class LiveRoomController extends PlayerController
     clearSuperChats();
     liveDanmaku.stop();
 
-    loadData();
+    unawaited(loadData());
   }
 
   void resetTransientRoomState() {
@@ -438,16 +441,23 @@ class LiveRoomController extends PlayerController
   }
 
   /// 加载直播间信息
-  void loadData() async {
-    final loadToken = ++_roomLoadToken;
+  Future<void> loadData({
+    int? reuseLoadToken,
+    LiveRoomDetail? prefetchedDetail,
+    bool showGlobalLoading = true,
+  }) async {
+    final loadToken = reuseLoadToken ?? ++_roomLoadToken;
     try {
-      SmartDialog.showLoading(msg: "");
+      if (showGlobalLoading) {
+        SmartDialog.showLoading(msg: "");
+      }
       loadError.value = false;
       error = null;
       errorStackTrace = null;
       update();
       addSysMsg("正在读取直播间信息");
-      final roomDetail = await site.liveSite.getRoomDetail(roomId: roomId);
+      final roomDetail = prefetchedDetail ??
+          await site.liveSite.getRoomDetail(roomId: roomId);
       if (!_isCurrentRoomLoadToken(loadToken)) {
         return;
       }
@@ -499,7 +509,7 @@ class LiveRoomController extends PlayerController
       }
       liveStatus.value = detail.value!.status || detail.value!.isRecord;
       if (liveStatus.value) {
-        getPlayQualites(loadToken: loadToken);
+        await getPlayQualites(loadToken: loadToken);
       }
       if (detail.value!.isRecord) {
         addSysMsg("当前主播未开播，正在轮播录像");
@@ -527,14 +537,14 @@ class LiveRoomController extends PlayerController
       error = e;
       errorStackTrace = s;
     } finally {
-      if (_isCurrentRoomLoadToken(loadToken)) {
+      if (showGlobalLoading && _isCurrentRoomLoadToken(loadToken)) {
         SmartDialog.dismiss(status: SmartStatus.loading);
       }
     }
   }
 
   /// 初始化播放器
-  void getPlayQualites({int? loadToken}) async {
+  Future<void> getPlayQualites({int? loadToken}) async {
     qualites.clear();
     currentQuality = -1;
 
@@ -555,7 +565,7 @@ class LiveRoomController extends PlayerController
         qualityCount: playQualites.length,
         qualityLevel: qualityLevel,
       );
-      getPlayUrl(loadToken: loadToken);
+      await getPlayUrl(loadToken: loadToken);
     } catch (e) {
       if (loadToken != null && !_isCurrentRoomLoadToken(loadToken)) {
         return;
@@ -569,7 +579,7 @@ class LiveRoomController extends PlayerController
     return AppSettingsController.instance.qualityLevel.value;
   }
 
-  void getPlayUrl({int? loadToken}) async {
+  Future<void> getPlayUrl({int? loadToken}) async {
     playUrls.clear();
     currentQualityInfo.value = qualites[currentQuality].quality;
     currentLineInfo.value = "";
@@ -593,7 +603,7 @@ class LiveRoomController extends PlayerController
     currentLineInfo.value = buildLiveRoomLineLabel(currentLineIndex);
     //重置错误次数
     mediaErrorRetryCount = 0;
-    initPlaylist();
+    await initPlaylist();
   }
 
   void changePlayLine(int index) {
@@ -603,7 +613,7 @@ class LiveRoomController extends PlayerController
     setPlayer();
   }
 
-  void initPlaylist() async {
+  Future<void> initPlaylist() async {
     currentLineInfo.value = buildLiveRoomLineLabel(currentLineIndex);
     errorMsg.value = "";
 
@@ -1105,26 +1115,47 @@ class LiveRoomController extends PlayerController
     }
 
     _roomLoadToken += 1;
-    rxSite.value = site;
-    rxRoomId.value = roomId;
-    sidebarTab.value = switchPlan.nextSidebarTab;
-    followed.value = DBService.instance.getFollowExist(
-      switchPlan.nextFollowLookupKey,
-    );
-
-    // 清除全部消息
+    final loadToken = _roomLoadToken;
+    isRoomSwitching.value = true;
+    switchingRoomLabel.value = "${site.name} - $roomId";
+    switchingSiteLogo.value = site.logo;
     liveDanmaku.stop();
-    resetTransientRoomState();
-    danmakuController?.clear();
 
-    // 重新设置LiveDanmaku
-    liveDanmaku = site.liveSite.getDanmaku();
+    try {
+      final roomDetail = await site.liveSite.getRoomDetail(roomId: roomId);
+      if (!_isCurrentRoomLoadToken(loadToken)) {
+        return;
+      }
 
-    // 停止播放
-    await player.stop();
+      rxSite.value = site;
+      rxRoomId.value = roomId;
+      sidebarTab.value = switchPlan.nextSidebarTab;
+      followed.value = DBService.instance.getFollowExist(
+        switchPlan.nextFollowLookupKey,
+      );
 
-    // 刷新信息
-    loadData();
+      resetTransientRoomState();
+      detail.value = roomDetail;
+      danmakuController?.clear();
+      liveDanmaku = site.liveSite.getDanmaku();
+      await player.stop();
+      await loadData(
+        reuseLoadToken: loadToken,
+        prefetchedDetail: roomDetail,
+        showGlobalLoading: false,
+      );
+    } catch (e, s) {
+      if (_isCurrentRoomLoadToken(loadToken)) {
+        Log.e("切换直播间失败：$e", s);
+        SmartDialog.showToast("切换直播间失败");
+      }
+    } finally {
+      if (_isCurrentRoomLoadToken(loadToken)) {
+        isRoomSwitching.value = false;
+        switchingRoomLabel.value = '';
+        switchingSiteLogo.value = '';
+      }
+    }
   }
 
   Future<void> _prepareDesktopWindowChrome() async {
