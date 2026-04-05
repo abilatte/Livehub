@@ -12,6 +12,7 @@ import 'package:livehub_app/app/utils.dart';
 import 'package:livehub_app/modules/live_room/chat_message_menu_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_desktop_layout_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_controller.dart';
+import 'package:livehub_app/modules/live_room/live_room_error_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_metric_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_sidebar_tab_utils.dart';
 import 'package:livehub_app/modules/live_room/super_chat_utils.dart';
@@ -96,6 +97,15 @@ class LiveRoomPage extends GetView<LiveRoomController> {
         late final Widget content;
         if (controller.loadError.value && !controller.isRoomSwitching.value) {
           final errorPresentation = controller.errorPresentation;
+          final errorTips = buildLiveRoomErrorContextTips(
+            errorType: errorPresentation.type,
+            retryCount: controller.mediaErrorRetryCount,
+            playUrlCount: controller.playUrls.length,
+            currentLineIndex: controller.currentLineIndex,
+            qualityCount: controller.qualites.length,
+            currentQuality: controller.currentQualityInfo.value,
+            currentLine: controller.currentLineInfo.value,
+          );
           final errorBody = Padding(
             padding: AppStyle.edgeInsetsA12,
             child: Column(
@@ -138,11 +148,70 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 AppStyle.vGap8,
+                Container(
+                  padding: AppStyle.edgeInsetsA12,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: AppStyle.radius8,
+                    border: Border.all(color: Colors.grey.withAlpha(30)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "建议处理顺序",
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      AppStyle.vGap8,
+                      ...errorTips.map(
+                        (tip) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Remix.information_line,
+                                  size: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              AppStyle.hGap8,
+                              Expanded(
+                                child: Text(
+                                  tip,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                AppStyle.vGap8,
                 Wrap(
                   alignment: WrapAlignment.center,
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    if (controller.playUrls.length > 1)
+                      TextButton.icon(
+                        onPressed: controller.showPlayUrlsSheet,
+                        icon: const Icon(Remix.route_line),
+                        label: const Text("切换线路"),
+                      ),
+                    if (controller.qualites.length > 1)
+                      TextButton.icon(
+                        onPressed: controller.showQualitySheet,
+                        icon: const Icon(Remix.hd_line),
+                        label: const Text("切换清晰度"),
+                      ),
                     TextButton.icon(
                       onPressed: controller.copyErrorDetail,
                       icon: const Icon(Remix.file_copy_line),

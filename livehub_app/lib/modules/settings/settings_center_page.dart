@@ -17,13 +17,6 @@ class SettingsCenterPage extends StatelessWidget {
       body: ListView(
         padding: AppStyle.edgeInsetsA12,
         children: [
-          Padding(
-            padding: AppStyle.edgeInsetsA12.copyWith(top: 4),
-            child: const Text(
-              "把常用设置集中到一起，Windows 下更容易找到需要调整的项目。",
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
           _buildSection(
             title: "播放与直播",
             children: [

@@ -85,10 +85,6 @@ class MinePage extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Remix.settings_3_line),
                   title: const Text("设置中心"),
-                  subtitle: const Text(
-                    "把直播、弹幕、日志和高级设置集中到一起",
-                    style: TextStyle(fontSize: 12),
-                  ),
                   trailing: const Icon(
                     Icons.chevron_right,
                     color: Colors.grey,

@@ -107,6 +107,62 @@ LiveRoomErrorPresentation resolveLiveRoomErrorPresentation(Object? error) {
   );
 }
 
+List<String> buildLiveRoomErrorContextTips({
+  required String errorType,
+  required int retryCount,
+  required int playUrlCount,
+  required int currentLineIndex,
+  required int qualityCount,
+  required String currentQuality,
+  required String currentLine,
+}) {
+  final tips = <String>[];
+
+  switch (errorType) {
+    case 'network':
+      tips.add('先检查当前网络、代理或 DNS，再进行刷新。');
+      break;
+    case 'auth':
+      tips.add('优先重新登录对应平台，再回到当前直播间重试。');
+      break;
+    case 'player':
+      if (playUrlCount > 1) {
+        tips.add('当前更像是线路或拉流异常，先尝试切换线路。');
+      } else if (qualityCount > 1) {
+        tips.add('当前更像是播放器兼容问题，先尝试切换清晰度。');
+      } else {
+        tips.add('当前更像是播放器初始化问题，建议先刷新再观察。');
+      }
+      break;
+    case 'room':
+      tips.add('先确认房间号和直播状态是否有效，再决定是否刷新。');
+      break;
+    default:
+      tips.add('先执行最轻量的刷新动作，再决定是否导出诊断包。');
+      break;
+  }
+
+  if (retryCount > 0) {
+    tips.add('播放器已自动重试 $retryCount 次。');
+  }
+  if (currentQuality.isNotEmpty) {
+    tips.add('当前清晰度：$currentQuality');
+  }
+  if (currentLine.isNotEmpty) {
+    tips.add('当前线路：$currentLine');
+  } else if (playUrlCount > 1 && currentLineIndex >= 0) {
+    tips.add('当前线路：线路${currentLineIndex + 1}');
+  }
+  if (playUrlCount > 1) {
+    tips.add('还可以尝试其他 ${playUrlCount - 1} 条备用线路。');
+  } else if (qualityCount > 1) {
+    tips.add('还可以尝试其他清晰度档位。');
+  }
+
+  tips.add('如仍失败，再复制详情或导出诊断包进行排查。');
+  return tips.take(4).toList();
+}
+
 bool _containsAny(String text, List<String> keywords) {
   for (final keyword in keywords) {
     if (text.contains(keyword)) {

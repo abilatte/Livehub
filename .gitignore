@@ -12,3 +12,8 @@ livehub_app/.flutter-plugins-dependencies
 
 livehub_core/build/
 livehub_core/.dart_tool/
+
+# Local-only workspace files
+.local/
+livehub_app/test_local/
+livehub_core/test_local/
