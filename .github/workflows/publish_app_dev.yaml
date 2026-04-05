@@ -1,0 +1,45 @@
+name: livehub-windows-dev-build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "dev_v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.x"
+          cache: true
+
+      - name: Enable Flutter Desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Restore Packages
+        run: |
+          cd livehub_app
+          flutter pub get
+
+      - name: Install flutter_distributor
+        run: dart pub global activate flutter_distributor
+
+      - name: Build Windows
+        run: |
+          cd livehub_app
+          flutter_distributor package --platform windows --targets msix,zip --skip-clean
+
+      - name: Upload Windows App to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            livehub_app/build/dist/*/*.msix
+            livehub_app/build/dist/*/*.zip

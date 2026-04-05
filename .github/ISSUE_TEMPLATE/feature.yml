@@ -1,0 +1,44 @@
+name: 功能请求
+title: "[Feature] 请填写简短易读的标题"
+description: "请求开发新的功能/优化某项功能"
+assignees: abilatte
+labels:
+  - "enhancement"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        当前仓库只维护 Windows 桌面端。
+        如果需求与 Windows 无关，通常不会继续推进；如果你愿意自行实现，也欢迎提交 PR。
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 非重复的Issue
+      description: 先去Issues列表中查找下是否存在相似的Issue，如果有了就不要重复发了
+      options:
+        - label: 已确认没有相似的Issue
+          required: true
+
+  - type: textarea
+    id: description
+    validations:
+      required: true
+    attributes:
+      label: 功能描述
+      description: 请填写功能描述，如果你有多个建议、请求，请分开提交Issue
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      description: 当前功能请求默认仅面向 Windows 桌面端
+      options:
+        - Windows
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 附加信息
+      description: 可以附加相关截图、视频或链接（好让我知道要我抄哪个APP）
+

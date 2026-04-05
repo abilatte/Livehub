@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LiveHub 极简图标预览</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --panel: #0f172a;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --line: rgba(255,255,255,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(56,189,248,0.12), transparent 32%),
+        var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      font-weight: 700;
+    }
+    p {
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(12px);
+    }
+    .card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 20px;
+      background: #050b16;
+    }
+    .name {
+      margin-top: 16px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .desc {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .path {
+      margin-top: 14px;
+      color: #7dd3fc;
+      font-size: 12px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>LiveHub 极简图标预览</h1>
+    <p>这 3 个版本都按应用图标思路收敛到极简元素，只保留最核心的播放 / 品牌 / Hub 语义，方便缩小后保持识别度。</p>
+    <section class="grid">
+      <article class="card">
+        <img src="./livehub-icon-minimal-01-play.svg" alt="LiveHub 极简图标 1">
+        <div class="name">方案 1：播放</div>
+        <div class="desc">最稳的应用图标方案。只有圆角方块和播放三角，缩小后识别最好。</div>
+        <div class="path">assets/branding/livehub-icon-minimal-01-play.svg</div>
+      </article>
+      <article class="card">
+        <img src="./livehub-icon-minimal-02-h.svg" alt="LiveHub 极简图标 2">
+        <div class="name">方案 2：字母 H</div>
+        <div class="desc">更像独立品牌标识，把 H 和播放意象合在一起，品牌感更强。</div>
+        <div class="path">assets/branding/livehub-icon-minimal-02-h.svg</div>
+      </article>
+      <article class="card">
+        <img src="./livehub-icon-minimal-03-hub.svg" alt="LiveHub 极简图标 3">
+        <div class="name">方案 3：Hub</div>
+        <div class="desc">保留 Hub 的节点连接感，但仍尽量压缩元素数量，偏中枢概念。</div>
+        <div class="path">assets/branding/livehub-icon-minimal-03-hub.svg</div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
