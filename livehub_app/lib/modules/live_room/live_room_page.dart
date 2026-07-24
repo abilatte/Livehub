@@ -1443,11 +1443,6 @@ class LiveRoomPage extends GetView<LiveRoomController> {
               ),
               AppStyle.divider,
               SettingsAction(
-                title: "贡献榜",
-                onTap: controller.showContributionRankSheet,
-              ),
-              AppStyle.divider,
-              SettingsAction(
                 title: "弹幕设置",
                 onTap: controller.showDanmuSettingsSheet,
               ),

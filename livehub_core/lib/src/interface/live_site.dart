@@ -2,7 +2,6 @@ import 'package:livehub_core/src/model/live_anchor_item.dart';
 
 import '../interface/live_danmaku.dart';
 import '../model/live_category_result.dart';
-import '../model/live_contribution_rank.dart';
 import '../model/live_message.dart';
 import '../model/live_play_url.dart';
 import '../model/live_room_detail.dart';
@@ -93,13 +92,5 @@ class LiveSite {
   Future<List<LiveSuperChatMessage>> getSuperChatMessage(
       {required String roomId}) {
     return Future.value([]);
-  }
-
-  /// 读取贡献榜（不支持的站点返回空列表）
-  Future<List<LiveContributionRankItem>> getContributionRank({
-    required String roomId,
-    LiveRoomDetail? detail,
-  }) {
-    return Future.value(<LiveContributionRankItem>[]);
   }
 }

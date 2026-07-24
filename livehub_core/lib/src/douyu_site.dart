@@ -15,7 +15,6 @@ import 'package:livehub_core/src/model/live_search_result.dart';
 import 'package:livehub_core/src/model/live_room_detail.dart';
 import 'package:livehub_core/src/model/live_play_quality.dart';
 import 'package:livehub_core/src/model/live_category_result.dart';
-import 'package:livehub_core/src/model/live_contribution_rank.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:livehub_core/src/scripts/douyu_sign.dart';
 
@@ -390,39 +389,6 @@ class DouyuSite implements LiveSite {
   }) {
     //尚不支持
     return Future.value([]);
-  }
-
-  @override
-  Future<List<LiveContributionRankItem>> getContributionRank({
-    required String roomId,
-    LiveRoomDetail? detail,
-  }) async {
-    try {
-      final result = await HttpClient.instance.getJson(
-        "https://www.douyu.com/japi/interact/comm/fanshome/rank/top10",
-        queryParameters: {"rid": roomId},
-        header: {
-          'referer': 'https://www.douyu.com/$roomId',
-          'user-agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        },
-      );
-      final items = (result["data"]?["intimacyRank"] as List?) ?? const [];
-      return items
-          .asMap()
-          .entries
-          .map(
-            (entry) => LiveContributionRankItem.fromGenericMap(
-              Map<String, dynamic>.from(entry.value as Map),
-              fallbackRank: entry.key + 1,
-              defaultScoreDetail: "亲密度",
-            ),
-          )
-          .where((item) => item.userName.trim().isNotEmpty)
-          .toList();
-    } catch (_) {
-      return [];
-    }
   }
 }
 

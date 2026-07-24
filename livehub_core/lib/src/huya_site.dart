@@ -699,15 +699,6 @@ class HuyaSite implements LiveSite {
     //尚不支持
     return Future.value([]);
   }
-
-  @override
-  Future<List<LiveContributionRankItem>> getContributionRank({
-    required String roomId,
-    LiveRoomDetail? detail,
-  }) {
-    // 虎牙暂无稳定贡献榜接口，与上游 fork 一致返回空列表
-    return Future.value(<LiveContributionRankItem>[]);
-  }
 }
 
 class HuyaUrlDataModel {
