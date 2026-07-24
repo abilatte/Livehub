@@ -19,6 +19,7 @@ class MpvOptionsService {
       videoHardwareDecoder: settings.videoHardwareDecoder.value,
       audioOutputDriver: settings.audioOutputDriver.value,
       advancedOptionsRaw: settings.mpvAdvancedOptions.value,
+      hardwareDecode: settings.hardwareDecode.value,
     );
   }
 
@@ -36,16 +37,11 @@ class MpvOptionsService {
     }
     final effective = effectiveOptionsWithSource();
     if (!Platform.isAndroid) {
+      // Always pass an explicit hwdec on desktop when known, so media_kit
+      // does not fall back to software decode under high bitrate live streams.
       final hwdec = effective.options["hwdec"];
-      // balanced profile leaves hwdec empty → use media_kit default
-      if (settings.customPlayerOutput.value ||
-          (hwdec != null && hwdec.isNotEmpty)) {
-        return VideoControllerConfiguration(
-          hwdec: hwdec,
-          enableHardwareAcceleration: settings.hardwareDecode.value,
-        );
-      }
       return VideoControllerConfiguration(
+        hwdec: (hwdec == null || hwdec.isEmpty) ? null : hwdec,
         enableHardwareAcceleration: settings.hardwareDecode.value,
       );
     }
@@ -61,9 +57,9 @@ class MpvOptionsService {
     if (player.platform is! NativePlayer) {
       return;
     }
-    final options = Map<String, String>.from(effectiveOptions())
-      ..remove("vo")
-      ..remove("hwdec");
+    final options = Map<String, String>.from(effectiveOptions());
+    // vo/hwdec are primarily owned by VideoControllerConfiguration, but also
+    // set on the player so open() paths inherit them before first frame.
     for (final entry in options.entries) {
       try {
         await (player.platform as dynamic).setProperty(entry.key, entry.value);

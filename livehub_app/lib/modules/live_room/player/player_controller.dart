@@ -33,8 +33,14 @@ mixin PlayerMixin {
     ),
   );
 
-  /// 初始化播放器并应用 MPV 档位/高级参数
+  bool _playerInitialized = false;
+
+  /// 初始化播放器并应用 MPV 档位/高级参数（只做一次，避免反复 open 时抖动）。
   Future<void> initializePlayer() async {
+    if (_playerInitialized) {
+      return;
+    }
+    _playerInitialized = true;
     await MpvOptionsService.applyToPlayer(player);
     // 自定义输出时仍单独设置 ao（与档位 merge 一致）
     if (AppSettingsController.instance.customPlayerOutput.value) {

@@ -6,6 +6,8 @@ class MpvOptionsUtils {
     "quality": "画质",
   };
 
+  /// Desktop profiles aligned with the Simple Live fork, plus live-friendly
+  /// demuxer cache defaults so Windows high-bitrate streams stay smooth.
   static const Map<String, Map<String, String>> desktopProfiles = {
     "performance": {
       "profile": "fast",
@@ -17,18 +19,39 @@ class MpvOptionsUtils {
       "correct-downscaling": "no",
       "sigmoid-upscaling": "no",
       "deband": "no",
+      "cache": "yes",
+      "demuxer-max-bytes": "150MiB",
+      "demuxer-readahead-secs": "5",
+      "framedrop": "vo",
     },
-    "balanced": <String, String>{},
+    // Windows balanced: keep media_kit defaults light, but still force safe
+    // hardware decode + modest live cache (fork leaves most keys empty).
+    "balanced": {
+      "hwdec": "auto-safe",
+      "vo": "gpu",
+      "scale": "bilinear",
+      "cscale": "bilinear",
+      "dscale": "bilinear",
+      "deband": "no",
+      "cache": "yes",
+      "demuxer-max-bytes": "150MiB",
+      "demuxer-readahead-secs": "5",
+      "framedrop": "vo",
+    },
     "quality": {
       "profile": "gpu-hq",
       "hwdec": "auto-safe",
-      "vo": "gpu-next",
-      "scale": "ewa_lanczossharp",
-      "cscale": "ewa_lanczossoft",
+      "vo": "gpu",
+      "scale": "spline36",
+      "cscale": "spline36",
       "dscale": "mitchell",
       "correct-downscaling": "yes",
       "sigmoid-upscaling": "yes",
-      "deband": "yes",
+      "deband": "no",
+      "cache": "yes",
+      "demuxer-max-bytes": "200MiB",
+      "demuxer-readahead-secs": "8",
+      "framedrop": "vo",
     },
   };
 
@@ -40,6 +63,7 @@ class MpvOptionsUtils {
     required String videoHardwareDecoder,
     required String audioOutputDriver,
     required String advancedOptionsRaw,
+    bool hardwareDecode = true,
   }) {
     final profileKey =
         desktopProfiles.containsKey(profile) ? profile : "balanced";
@@ -50,6 +74,12 @@ class MpvOptionsUtils {
     final source = <String, String>{
       for (final key in profileOptions.keys) key: "profile:$profileKey",
     };
+
+    // When hardware decode is disabled, force soft decode.
+    if (!hardwareDecode) {
+      options["hwdec"] = "no";
+      source["hwdec"] = "hardwareDecode:false";
+    }
 
     if (customPlayerOutput) {
       final vo = videoOutputDriver.trim();

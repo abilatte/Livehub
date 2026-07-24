@@ -14,7 +14,22 @@ void main() {
       );
       expect(merged.options['scale'], 'bilinear');
       expect(merged.options['hwdec'], 'auto-safe');
+      expect(merged.options['cache'], 'yes');
       expect(merged.source['scale'], 'profile:performance');
+    });
+
+    test('balanced profile still forces safe hardware decode on desktop', () {
+      final merged = MpvOptionsUtils.mergeOptions(
+        profile: 'balanced',
+        customPlayerOutput: false,
+        videoOutputDriver: '',
+        videoHardwareDecoder: '',
+        audioOutputDriver: '',
+        advancedOptionsRaw: '',
+        hardwareDecode: true,
+      );
+      expect(merged.options['hwdec'], 'auto-safe');
+      expect(merged.options['vo'], 'gpu');
     });
 
     test('custom and advanced override profile', () {
@@ -33,6 +48,19 @@ void main() {
       expect(merged.source['deband'], 'advanced');
       expect(merged.options['scale'], 'bilinear');
       expect(merged.source['scale'], 'advanced');
+    });
+
+    test('hardwareDecode false forces hwdec=no', () {
+      final merged = MpvOptionsUtils.mergeOptions(
+        profile: 'performance',
+        customPlayerOutput: false,
+        videoOutputDriver: '',
+        videoHardwareDecoder: '',
+        audioOutputDriver: '',
+        advancedOptionsRaw: '',
+        hardwareDecode: false,
+      );
+      expect(merged.options['hwdec'], 'no');
     });
 
     test('parseOptions supports --key=value form', () {
