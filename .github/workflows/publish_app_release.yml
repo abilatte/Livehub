@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag name, for example v2.0.3"
+        required: true
+        default: "v2.0.3"
+      create_release:
+        description: "Upload build outputs to a GitHub Release"
+        type: boolean
+        default: true
 
 jobs:
   build-windows:
@@ -12,6 +22,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.ref }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -43,18 +55,27 @@ jobs:
             livehub_app/build/dist/*/*.msix
             livehub_app/build/dist/*/*.zip
 
-      - name: Get version from tag
+      - name: Resolve release version
         id: version
         shell: bash
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.tag_name }}"
+          else
+            version="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $version"
 
       - name: Upload Release
-        uses: softprops/action-gh-release@v1
+        if: ${{ github.event_name == 'push' || inputs.create_release }}
+        uses: softprops/action-gh-release@v2
         with:
-          name: "${{ steps.version.outputs.VERSION }}"
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: ${{ steps.version.outputs.VERSION }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
-          token: ${{ secrets.TOKEN }}
+          prerelease: ${{ contains(steps.version.outputs.VERSION, 'beta') || contains(steps.version.outputs.VERSION, 'alpha') }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             livehub_app/build/dist/*/*.msix
             livehub_app/build/dist/*/*.zip
