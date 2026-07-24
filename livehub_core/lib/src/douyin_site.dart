@@ -7,6 +7,7 @@ import 'package:livehub_core/src/common/core_error.dart';
 import 'package:livehub_core/src/common/douyin_cookie_helper.dart';
 import 'package:livehub_core/src/common/douyin_protocol_utils.dart';
 import 'package:livehub_core/src/common/http_client.dart';
+import 'package:livehub_core/src/model/live_contribution_rank.dart';
 import 'package:livehub_core/src/scripts/douyin_sign.dart';
 
 class DouyinSite implements LiveSite {
@@ -935,6 +936,91 @@ class DouyinSite implements LiveSite {
     required String roomId,
   }) {
     return Future.value(<LiveSuperChatMessage>[]);
+  }
+
+  @override
+  Future<List<LiveContributionRankItem>> getContributionRank({
+    required String roomId,
+    LiveRoomDetail? detail,
+  }) async {
+    try {
+      final roomDetail = detail ?? await getRoomDetail(roomId: roomId);
+      final webRid = roomDetail.roomId.isNotEmpty ? roomDetail.roomId : roomId;
+      final danmakuArgs = roomDetail.danmakuData is DouyinDanmakuArgs
+          ? roomDetail.danmakuData as DouyinDanmakuArgs
+          : null;
+
+      final roomInfo = await _getRoomDataByApi(webRid);
+      final roomList = (roomInfo["data"] as List?) ?? const [];
+      if (roomList.isEmpty) {
+        return [];
+      }
+      final roomData = roomList.first;
+      final owner = roomData["owner"] ?? roomInfo["user"] ?? {};
+      final anchorId =
+          owner["id_str"]?.toString() ?? owner["id"]?.toString() ?? "";
+      final secAnchorId = owner["sec_uid"]?.toString() ?? "";
+      final realRoomId =
+          danmakuArgs?.roomId ?? roomData["id_str"]?.toString() ?? "";
+      if (anchorId.isEmpty || secAnchorId.isEmpty || realRoomId.isEmpty) {
+        return [];
+      }
+
+      final requestHeader = await getRequestHeaders();
+      requestHeader["Referer"] = "https://live.douyin.com/$webRid";
+
+      final uri =
+          Uri.parse("https://live.douyin.com/webcast/ranklist/audience/")
+              .replace(
+        queryParameters: {
+          "aid": "6383",
+          "app_name": "douyin_web",
+          "live_id": "1",
+          "device_platform": "web",
+          "language": "zh-CN",
+          "enter_from": "link_share",
+          "cookie_enabled": "true",
+          "screen_width": "1920",
+          "screen_height": "1080",
+          "browser_language": "zh-CN",
+          "browser_platform": "Win32",
+          "browser_name": "Chrome",
+          "browser_version": "125.0.0.0",
+          "os_name": "Windows",
+          "os_version": "10",
+          "webcast_sdk_version": "2450",
+          "room_id": realRoomId,
+          "anchor_id": anchorId,
+          "sec_anchor_id": secAnchorId,
+          "ignoreToast": "true",
+          "rank_type": "30",
+          "msToken": "",
+        },
+      );
+      final requestUrl = DouyinSign.getAbogusUrl(
+        uri.toString(),
+        kDefaultUserAgent,
+      );
+      final result = await HttpClient.instance.getJson(
+        requestUrl,
+        header: requestHeader,
+      );
+      final items = (result["data"]?["ranks"] as List?) ?? const [];
+      return items
+          .asMap()
+          .entries
+          .map(
+            (entry) => LiveContributionRankItem.fromDouyinRankEntry(
+              Map<String, dynamic>.from(entry.value as Map),
+              index: entry.key,
+            ),
+          )
+          .where((item) => item.userName.trim().isNotEmpty)
+          .toList();
+    } catch (e) {
+      CoreLog.error(e);
+      return [];
+    }
   }
 
   //生成指定长度的16进制随机字符串
