@@ -675,16 +675,19 @@ Widget buildControls(
 
 Widget buildDanmuView(VideoState videoState, LiveRoomController controller) {
   var padding = MediaQuery.of(videoState.context).padding;
+  final settings = AppSettingsController.instance;
   controller.danmakuView ??= DanmakuScreen(
     key: controller.globalDanmuKey,
     createdController: controller.initDanmakuController,
     option: DanmakuOption(
-      fontSize: AppSettingsController.instance.danmuSize.value,
-      area: AppSettingsController.instance.danmuArea.value,
-      duration: AppSettingsController.instance.danmuSpeed.value.toInt(),
-      opacity: AppSettingsController.instance.danmuOpacity.value,
-      //strokeWidth: AppSettingsController.instance.danmuStrokeWidth.value,
-      fontWeight: AppSettingsController.instance.danmuFontWeight.value,
+      fontSize: settings.danmuSize.value,
+      // Pin a CJK font on Windows to avoid per-glyph fallback cost.
+      fontFamily: Platform.isWindows ? "Microsoft YaHei" : null,
+      area: settings.danmuArea.value,
+      duration: settings.danmuSpeed.value,
+      opacity: settings.danmuOpacity.value,
+      strokeWidth: settings.danmuStrokeWidth.value,
+      fontWeight: settings.danmuFontWeight.value,
     ),
   );
   return Positioned.fill(

@@ -191,17 +191,6 @@ mixin PlayerDanmakuMixin on PlayerStateMixin {
 
   void initDanmakuController(DanmakuController e) {
     danmakuController = e;
-    // danmakuController?.updateOption(
-    //   DanmakuOption(
-    //     fontSize: AppSettingsController.instance.danmuSize.value,
-    //     area: AppSettingsController.instance.danmuArea.value,
-    //     duration: AppSettingsController.instance.danmuSpeed.value,
-    //     opacity: AppSettingsController.instance.danmuOpacity.value,
-    //     strokeWidth: AppSettingsController.instance.danmuStrokeWidth.value,
-    //     fontWeight: FontWeight
-    //         .values[AppSettingsController.instance.danmuFontWeight.value],
-    //   ),
-    // );
   }
 
   void updateDanmuOption(DanmakuOption? option) {
@@ -211,10 +200,11 @@ mixin PlayerDanmakuMixin on PlayerStateMixin {
 
   void disposeDanmakuController() {
     danmakuController?.clear();
+    danmakuController = null;
   }
 
   void addDanmaku(List<DanmakuContentItem> items) {
-    if (!showDanmakuState.value) {
+    if (!showDanmakuState.value || danmakuController == null) {
       return;
     }
     for (var item in items) {
