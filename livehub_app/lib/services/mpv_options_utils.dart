@@ -38,15 +38,15 @@ class MpvOptionsUtils {
       "demuxer-readahead-secs": "5",
       "framedrop": "vo",
     },
+    // Prefer high stream 清晰度 with still-smooth decode: keep hwdec + cache,
+    // avoid the heaviest ewa_lanczos / gpu-next path that often costs FPS on
+    // Windows live streams (fork users often watch max quality without that).
     "quality": {
-      "profile": "gpu-hq",
       "hwdec": "auto-safe",
       "vo": "gpu",
       "scale": "spline36",
       "cscale": "spline36",
       "dscale": "mitchell",
-      "correct-downscaling": "yes",
-      "sigmoid-upscaling": "yes",
       "deband": "no",
       "cache": "yes",
       "demuxer-max-bytes": "200MiB",

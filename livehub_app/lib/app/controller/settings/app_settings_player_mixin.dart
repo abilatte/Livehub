@@ -64,10 +64,12 @@ mixin AppSettingsPlayerMixin on GetxController {
       LocalStorageService.kVideoHardwareDecoder,
       "auto",
     );
-    // Default to performance on desktop for smoother high-bitrate live streams.
+    // Default balanced: keep picture closer to normal/high quality viewing while
+    // still applying safe hwdec + live cache (see MpvOptionsUtils.desktopProfiles).
+    // Stream 清晰度 (qualityLevel) is independent of this MPV profile.
     mpvProfile.value = LocalStorageService.instance.getValue(
       LocalStorageService.kMpvProfile,
-      "performance",
+      "balanced",
     );
     mpvAdvancedOptions.value = LocalStorageService.instance.getValue(
       LocalStorageService.kMpvAdvancedOptions,
