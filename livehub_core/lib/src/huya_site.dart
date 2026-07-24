@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:livehub_core/livehub_core.dart';
+import 'package:livehub_core/src/common/huya_protocol_utils.dart';
 import 'package:livehub_core/src/common/http_client.dart';
 import 'package:crypto/crypto.dart';
 import 'package:livehub_core/src/model/tars/get_cdn_token_ex_req.dart';
@@ -354,6 +355,16 @@ class HuyaSite implements LiveSite {
     var roomInfo = await _getRoomInfo(roomId);
     var tLiveInfo = roomInfo["roomInfo"]["tLiveInfo"];
     var tProfileInfo = roomInfo["roomInfo"]["tProfileInfo"];
+    final topSid = HuyaProtocolUtils.asPositiveInt(roomInfo["topSid"]);
+    final subSid = HuyaProtocolUtils.asPositiveInt(roomInfo["subSid"]);
+    final profileRoomId = HuyaProtocolUtils.asPositiveInt(
+      tLiveInfo["lProfileRoom"],
+    );
+    final presenterUid = HuyaProtocolUtils.resolvePresenterUid(
+      topSid: topSid,
+      subSid: subSid,
+      profileRoomId: profileRoomId,
+    );
 
     var title = tLiveInfo["sIntroduction"]?.toString() ?? "";
     if (title.isEmpty) {
@@ -372,7 +383,7 @@ class HuyaSite implements LiveSite {
           hlsAntiCode: item["sHlsAntiCode"].toString(),
           streamName: item["sStreamName"].toString(),
           cdnType: item["sCdnType"].toString(),
-          presenterUid: roomInfo["topSid"]??0,
+          presenterUid: presenterUid,
         ));
       }
     }
@@ -390,9 +401,6 @@ class HuyaSite implements LiveSite {
       ));
     }
 
-    var topSid = roomInfo["topSid"];
-    var subSid = roomInfo["subSid"];
-
     return LiveRoomDetail(
       cover: tLiveInfo["sScreenshot"].toString(),
       online: tLiveInfo["lTotalCount"],
@@ -402,7 +410,9 @@ class HuyaSite implements LiveSite {
       userAvatar: tProfileInfo["sAvatar180"].toString(),
       introduction: tLiveInfo["sIntroduction"].toString(),
       notice: roomInfo["welcomeText"].toString(),
-      status: roomInfo["roomInfo"]["eLiveStatus"] == 2,
+      status: HuyaProtocolUtils.isHuyaLiveStatus(
+        roomInfo["roomInfo"]["eLiveStatus"],
+      ),
       data: HuyaUrlDataModel(
         url:
             "https:${utf8.decode(base64.decode(roomInfo["roomProfile"]["liveLineUrl"].toString()))}",
@@ -412,8 +422,8 @@ class HuyaSite implements LiveSite {
       ),
       danmakuData: HuyaDanmakuArgs(
         ayyuid: tLiveInfo["lYyid"] ?? 0,
-        topSid: topSid ?? 0,
-        subSid: subSid ?? 0,
+        topSid: topSid,
+        subSid: subSid,
       ),
       url: "https://www.huya.com/$roomId",
     );
@@ -440,12 +450,30 @@ class HuyaSite implements LiveSite {
     });
 
     var jsonObj = json.decode(jsonText);
-    var topSid = int.tryParse(
-        RegExp(r'lChannelId":([0-9]+)').firstMatch(resultText)?.group(1) ??
-            "0");
-    var subSid = int.tryParse(
+    // Prefer regex channel ids, then nested map fields from the page payload.
+    var topSid = HuyaProtocolUtils.asPositiveInt(
+      int.tryParse(
+        RegExp(r'lChannelId":([0-9]+)').firstMatch(resultText)?.group(1) ?? "0",
+      ),
+    );
+    var subSid = HuyaProtocolUtils.asPositiveInt(
+      int.tryParse(
         RegExp(r'lSubChannelId":([0-9]+)').firstMatch(resultText)?.group(1) ??
-            "0");
+            "0",
+      ),
+    );
+    if (topSid == 0) {
+      topSid = HuyaProtocolUtils.firstPositiveIntByKeys(
+        jsonObj,
+        const ["lChannelId", "topSid", "iChannelId"],
+      );
+    }
+    if (subSid == 0) {
+      subSid = HuyaProtocolUtils.firstPositiveIntByKeys(
+        jsonObj,
+        const ["lSubChannelId", "subSid", "iSubChannelId"],
+      );
+    }
     jsonObj["topSid"] = topSid;
     jsonObj["subSid"] = subSid;
     return jsonObj;

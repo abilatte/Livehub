@@ -22,14 +22,21 @@ class DouyinAccountService extends GetxService {
 
   void setSite() {
     var site = (Sites.allSites[Constant.kDouyin]!.liveSite as DouyinSite);
-    site.cookie = cookie;
+    if (cookie.isEmpty) {
+      site.cookie = "";
+    } else {
+      site.setCookieFromInput(cookie);
+    }
   }
 
   void setCookie(String cookie) {
-    this.cookie = cookie;
+    final normalized = cookie.trim().isEmpty
+        ? ""
+        : DouyinCookieHelper.normalizeInput(cookie);
+    this.cookie = normalized;
     LocalStorageService.instance
-        .setValue(LocalStorageService.kDouyinCookie, cookie);
-    hasCookie.value = cookie.isNotEmpty;
+        .setValue(LocalStorageService.kDouyinCookie, normalized);
+    hasCookie.value = normalized.isNotEmpty;
     setSite();
   }
 

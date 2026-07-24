@@ -17,6 +17,9 @@ class WebScoketUtils {
   /// 备用链接
   final String? backupUrl;
 
+  /// 备用链接列表（按顺序尝试）
+  final List<String> backupUrls;
+
   /// 心跳时间
   final int heartBeatTime;
 
@@ -47,6 +50,7 @@ class WebScoketUtils {
     this.onHeartBeat,
     this.headers,
     this.backupUrl,
+    this.backupUrls = const [],
   });
   IOWebSocketChannel? webSocket;
   Timer? heartBeatTimer;
@@ -60,28 +64,47 @@ class WebScoketUtils {
 
   StreamSubscription<dynamic>? streamSubscription;
 
+  List<String> get _connectUrls {
+    final urls = <String>[url];
+    if (backupUrl != null && backupUrl!.isNotEmpty) {
+      urls.add(backupUrl!);
+    }
+    urls.addAll(backupUrls.where((u) => u.isNotEmpty));
+    return urls.toSet().toList();
+  }
+
   void connect({bool retry = false}) async {
     close();
-    try {
-      var wsurl = url;
-      if (backupUrl != null && backupUrl!.isNotEmpty && retry) {
-        wsurl = backupUrl!;
-      }
-      webSocket = IOWebSocketChannel.connect(
-        wsurl,
-        connectTimeout: Duration(seconds: 10),
-        headers: headers,
-      );
-
-      await webSocket?.ready;
-      ready();
-    } catch (e) {
-      if (!retry) {
-        connect(retry: true);
-        return;
-      }
-      onError(e, e);
+    final urls = retry ? _connectUrls.skip(1).toList() : _connectUrls;
+    if (urls.isEmpty) {
+      onError("WebSocket connection failed", StackTrace.current);
+      return;
     }
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    for (final wsurl in urls) {
+      try {
+        webSocket = IOWebSocketChannel.connect(
+          wsurl,
+          connectTimeout: Duration(seconds: 10),
+          headers: headers,
+        );
+
+        await webSocket?.ready;
+        ready();
+        return;
+      } catch (e, s) {
+        lastError = e;
+        lastStackTrace = s;
+        webSocket?.sink.close();
+        webSocket = null;
+      }
+    }
+    if (!retry && _connectUrls.length > 1) {
+      connect(retry: true);
+      return;
+    }
+    onError(lastError ?? "WebSocket connection failed", lastStackTrace);
   }
 
   /// 连接完成

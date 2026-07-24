@@ -92,14 +92,25 @@ class DouyinDanmaku implements LiveDanmaku {
 
     var url = "$uri&signature=$sign";
     var backupUrl = url.replaceAll("webcast3-ws-web-lq", "webcast5-ws-web-lf");
-    print(url);
+    final backupUrls = [
+      url.replaceAll("webcast3-ws-web-lq", "webcast5-ws-web-hl"),
+      url.replaceAll("webcast3-ws-web-lq", "webcast3-ws-web-hl"),
+      url.replaceAll("webcast3-ws-web-lq", "webcast3-ws-web-lf"),
+    ];
+    CoreLog.d("[DouyinDanmaku] 连接弹幕服务器: ${danmakuArgs.webRid}");
     webScoketUtils = WebScoketUtils(
       url: url,
       backupUrl: backupUrl,
+      backupUrls: backupUrls,
       headers: {
-        "User-Agnet": DouyinSite.kDefaultUserAgent,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "User-Agent": DouyinSite.kDefaultUserAgent,
         "Cookie": danmakuArgs.cookie,
         "Origin": "https://live.douyin.com",
+        "Referer": "https://live.douyin.com/${danmakuArgs.webRid}",
       },
       heartBeatTime: heartbeatTime,
       onMessage: (e) {
@@ -130,40 +141,52 @@ class DouyinDanmaku implements LiveDanmaku {
   }
 
   void decodeMessage(args) {
-    // CoreLog.i(args.toString());
+    try {
+      var wssPackage = PushFrame.fromBuffer(args);
 
-    var wssPackage = PushFrame.fromBuffer(args);
-
-    var logId = wssPackage.logId;
-    var decompressed = gzip.decode(wssPackage.payload);
-    var payloadPackage = Response.fromBuffer(decompressed);
-    if (payloadPackage.needAck) {
-      sendAck(logId, payloadPackage.internalExt);
-      //return;
-    }
-    for (var msg in payloadPackage.messagesList) {
-      if (msg.method == 'WebcastChatMessage') {
-        unPackWebcastChatMessage(msg.payload);
-      } else if (msg.method == 'WebcastRoomUserSeqMessage') {
-        unPackWebcastRoomUserSeqMessage(msg.payload);
+      var logId = wssPackage.logId;
+      List<int> decompressed;
+      try {
+        decompressed = gzip.decode(wssPackage.payload);
+      } catch (_) {
+        // Some frames may already be uncompressed.
+        decompressed = wssPackage.payload;
       }
+      var payloadPackage = Response.fromBuffer(decompressed);
+      if (payloadPackage.needAck) {
+        sendAck(logId, payloadPackage.internalExt);
+      }
+      for (var msg in payloadPackage.messagesList) {
+        if (msg.method == 'WebcastChatMessage') {
+          unPackWebcastChatMessage(msg.payload);
+        } else if (msg.method == 'WebcastRoomUserSeqMessage') {
+          unPackWebcastRoomUserSeqMessage(msg.payload);
+        }
+      }
+    } catch (e) {
+      CoreLog.error(e);
     }
   }
 
   void unPackWebcastChatMessage(List<int> payload) {
-    var chatMessage = ChatMessage.fromBuffer(payload);
-    onMessage?.call(
-      LiveMessage(
-        type: LiveMessageType.chat,
-        color: LiveMessageColor.white,
-        //暂不知道具体怎么转换颜色
-        // color: chatMessage.common.fullScreenTextColor.
-        //     ? LiveMessageColor.white
-        //     : LiveMessageColor.numberToColor(color),
-        message: chatMessage.content,
-        userName: chatMessage.user.nickName,
-      ),
-    );
+    try {
+      var chatMessage = ChatMessage.fromBuffer(payload);
+      final content = chatMessage.content.trim();
+      final userName = chatMessage.user.nickName.trim();
+      if (content.isEmpty && userName.isEmpty) {
+        return;
+      }
+      onMessage?.call(
+        LiveMessage(
+          type: LiveMessageType.chat,
+          color: LiveMessageColor.white,
+          message: content,
+          userName: userName,
+        ),
+      );
+    } catch (e) {
+      CoreLog.error(e);
+    }
   }
 
   void unPackWebcastRoomUserSeqMessage(List<int> payload) {
