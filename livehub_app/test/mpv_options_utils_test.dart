@@ -29,7 +29,8 @@ void main() {
         hardwareDecode: true,
       );
       expect(merged.options['hwdec'], 'auto-safe');
-      expect(merged.options['vo'], 'gpu');
+      // vo must not be forced — otherwise media_kit opens a separate window
+      expect(merged.options.containsKey('vo'), isFalse);
     });
 
     test('custom and advanced override profile', () {

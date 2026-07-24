@@ -37,8 +37,9 @@ class MpvOptionsService {
     }
     final effective = effectiveOptionsWithSource();
     if (!Platform.isAndroid) {
-      // Always pass an explicit hwdec on desktop when known, so media_kit
-      // does not fall back to software decode under high bitrate live streams.
+      // Desktop: only pass hwdec. Never pass vo=gpu here — that can open a
+      // standalone mpv window titled "LiveHub Player" instead of embedding
+      // into the Flutter Video widget (same as Simple Live fork behavior).
       final hwdec = effective.options["hwdec"];
       return VideoControllerConfiguration(
         hwdec: (hwdec == null || hwdec.isEmpty) ? null : hwdec,
@@ -57,9 +58,11 @@ class MpvOptionsService {
     if (player.platform is! NativePlayer) {
       return;
     }
-    final options = Map<String, String>.from(effectiveOptions());
-    // vo/hwdec are primarily owned by VideoControllerConfiguration, but also
-    // set on the player so open() paths inherit them before first frame.
+    // Match fork: do not set vo/hwdec on the native player.
+    // Setting vo=gpu forces an external mpv window ("LiveHub Player").
+    final options = Map<String, String>.from(effectiveOptions())
+      ..remove("vo")
+      ..remove("hwdec");
     for (final entry in options.entries) {
       try {
         await (player.platform as dynamic).setProperty(entry.key, entry.value);

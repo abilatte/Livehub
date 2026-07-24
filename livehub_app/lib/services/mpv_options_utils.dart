@@ -8,11 +8,13 @@ class MpvOptionsUtils {
 
   /// Desktop profiles aligned with the Simple Live fork, plus live-friendly
   /// demuxer cache defaults so Windows high-bitrate streams stay smooth.
+  /// Note: do not put `vo=gpu` here for Windows embed. media_kit owns the
+  /// video output surface; setting vo on the native player opens a separate
+  /// "LiveHub Player" window.
   static const Map<String, Map<String, String>> desktopProfiles = {
     "performance": {
       "profile": "fast",
       "hwdec": "auto-safe",
-      "vo": "gpu",
       "scale": "bilinear",
       "cscale": "bilinear",
       "dscale": "bilinear",
@@ -24,11 +26,9 @@ class MpvOptionsUtils {
       "demuxer-readahead-secs": "5",
       "framedrop": "vo",
     },
-    // Windows balanced: keep media_kit defaults light, but still force safe
-    // hardware decode + modest live cache (fork leaves most keys empty).
+    // Windows balanced: safe hwdec + live cache (fork leaves most keys empty).
     "balanced": {
       "hwdec": "auto-safe",
-      "vo": "gpu",
       "scale": "bilinear",
       "cscale": "bilinear",
       "dscale": "bilinear",
@@ -38,12 +38,8 @@ class MpvOptionsUtils {
       "demuxer-readahead-secs": "5",
       "framedrop": "vo",
     },
-    // Prefer high stream 清晰度 with still-smooth decode: keep hwdec + cache,
-    // avoid the heaviest ewa_lanczos / gpu-next path that often costs FPS on
-    // Windows live streams (fork users often watch max quality without that).
     "quality": {
       "hwdec": "auto-safe",
-      "vo": "gpu",
       "scale": "spline36",
       "cscale": "spline36",
       "dscale": "mitchell",
