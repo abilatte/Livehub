@@ -1,5 +1,5 @@
 name: livehub_app
-version: 2.1.1+25
+version: 2.1.2+26
 publish_to: none
 description: "LiveHub Windows desktop app"
 environment:
