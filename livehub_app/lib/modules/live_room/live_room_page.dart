@@ -40,26 +40,23 @@ class LiveRoomPage extends GetView<LiveRoomController> {
     LiveMessage message,
   ) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final menuItems = <PopupMenuEntry<String>>[];
-    if (message.userName != "LiveSysMessage") {
-      menuItems.add(
-        const PopupMenuItem<String>(
-          value: "userName",
-          child: Text("复制用户名"),
-        ),
-      );
-    }
-    menuItems.addAll([
-      const PopupMenuItem<String>(
-        value: "message",
-        child: Text("复制消息内容"),
-      ),
-      const PopupMenuItem<String>(
-        value: "full",
-        child: Text("复制整条消息"),
-      ),
-    ]);
-    final action = await showMenu<String>(
+    final isSystem = isChatSystemMessage(message.userName);
+    final userName = normalizeChatUserName(message.userName);
+    final isPlatformShielded = !isSystem &&
+        AppSettingsController.instance.isUserShielded(
+          userName,
+          siteId: controller.site.id,
+        );
+    final isTempMuted = !isSystem && controller.isTempMutedUser(userName);
+    final specs = buildChatMessageMenuItems(
+      isSystemMessage: isSystem,
+      isPlatformShielded: isPlatformShielded,
+      isTempMuted: isTempMuted,
+      siteName: controller.site.name,
+      hasTempMutes: controller.tempMutedUsers.isNotEmpty,
+      hasMessageContent: normalizeChatMessageText(message.message).isNotEmpty,
+    );
+    final action = await showMenu<ChatMessageMenuAction>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 1, 1),
@@ -68,26 +65,33 @@ class LiveRoomPage extends GetView<LiveRoomController> {
       popUpAnimationStyle: resolveChatMessageMenuAnimationStyle(
         isDesktopPlatform: true,
       ),
-      items: menuItems,
+      items: [
+        for (final spec in specs)
+          PopupMenuItem<ChatMessageMenuAction>(
+            value: spec.action,
+            enabled: spec.enabled,
+            child: spec.subtitle == null
+                ? Text(spec.label)
+                : ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(spec.label),
+                    subtitle: Text(
+                      spec.subtitle!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+          ),
+      ],
     );
     if (action == null) {
       return;
     }
-    switch (action) {
-      case "userName":
-        Utils.copyToClipboard(message.userName);
-        break;
-      case "message":
-        Utils.copyToClipboard(message.message);
-        break;
-      case "full":
-        if (message.userName == "LiveSysMessage") {
-          Utils.copyToClipboard(message.message);
-        } else {
-          Utils.copyToClipboard("${message.userName}：${message.message}");
-        }
-        break;
-    }
+    await controller.handleChatMessageMenuAction(
+      action: action,
+      message: message,
+    );
   }
 
   @override
@@ -259,14 +263,21 @@ class LiveRoomPage extends GetView<LiveRoomController> {
           content = buildPageUI();
         }
 
-        if (!controller.isRoomSwitching.value) {
+        if (!controller.isRoomSwitching.value &&
+            !controller.showInitialLoadRecoveryOverlay &&
+            !controller.showPlaybackSwitchOverlay) {
           return content;
         }
 
         return Stack(
           children: [
             content,
-            buildRoomSwitchingOverlay(context),
+            if (controller.showInitialLoadRecoveryOverlay)
+              buildInitialLoadRecoveryOverlay(context),
+            if (controller.showPlaybackSwitchOverlay)
+              buildPlaybackSwitchOverlay(context),
+            if (controller.isRoomSwitching.value)
+              buildRoomSwitchingOverlay(context),
           ],
         );
       },
@@ -318,6 +329,104 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.grey,
                       ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildInitialLoadRecoveryOverlay(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ColoredBox(
+          color: Colors.black.withAlpha(56),
+          child: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 320),
+              margin: AppStyle.edgeInsetsH12,
+              padding: AppStyle.edgeInsetsA16,
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: AppStyle.radius8,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(16),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(strokeWidth: 2.4),
+                  AppStyle.vGap12,
+                  Text(
+                    "正在尝试恢复直播间",
+                    style: Theme.of(context).textTheme.titleSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    controller.initialLoadRecoveryLabel.value,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  AppStyle.vGap8,
+                  const Text(
+                    "如果本轮恢复仍失败，会自动切换到错误页。",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildPlaybackSwitchOverlay(BuildContext context) {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black.withAlpha(48),
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 300),
+            margin: AppStyle.edgeInsetsH12,
+            padding: AppStyle.edgeInsetsA16,
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: AppStyle.radius8,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(14),
+                  blurRadius: 12,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(strokeWidth: 2.2),
+                AppStyle.vGap12,
+                Text(
+                  controller.playbackSwitchingLabel.value,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+                AppStyle.vGap8,
+                const Text(
+                  "切换成功后会自动提交新状态，失败则回退到上一项。",
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -1067,6 +1176,9 @@ class LiveRoomPage extends GetView<LiveRoomController> {
           );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onTapUp: (details) {
+        showChatMessageMenu(context, details.globalPosition, message);
+      },
       onSecondaryTapDown: (details) {
         showChatMessageMenu(context, details.globalPosition, message);
       },

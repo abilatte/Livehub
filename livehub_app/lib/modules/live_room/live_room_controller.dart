@@ -15,14 +15,17 @@ import 'package:livehub_app/app/utils.dart';
 import 'package:livehub_app/app/version_utils.dart';
 import 'package:livehub_app/models/db/follow_user.dart';
 import 'package:livehub_app/models/db/history.dart';
+import 'package:livehub_app/modules/live_room/chat_message_menu_utils.dart';
 import 'package:livehub_app/modules/live_room/follow_history_panel.dart';
 import 'package:livehub_app/modules/live_room/live_room_diagnostic_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_error_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_metric_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_playback_utils.dart';
+import 'package:livehub_app/modules/live_room/live_room_playback_switch_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_performance_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_reset_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_sidebar_tab_utils.dart';
+import 'package:livehub_app/modules/live_room/live_room_startup_recovery_utils.dart';
 import 'package:livehub_app/modules/live_room/player/player_controller.dart';
 import 'package:livehub_app/modules/live_room/super_chat_utils.dart';
 import 'package:livehub_app/modules/settings/danmu_settings_page.dart';
@@ -71,6 +74,9 @@ class LiveRoomController extends PlayerController
 
   /// 聊天信息
   RxList<LiveMessage> messages = RxList<LiveMessage>();
+
+  /// 当前直播间会话内的临时禁言用户（不持久化）。
+  final tempMutedUsers = <String>{}.obs;
 
   /// 清晰度数据
   RxList<LivePlayQuality> qualites = RxList<LivePlayQuality>();
@@ -122,6 +128,16 @@ class LiveRoomController extends PlayerController
   final isRoomSwitching = false.obs;
   final switchingRoomLabel = ''.obs;
   final switchingSiteLogo = ''.obs;
+  final isSwitchingPlaybackSource = false.obs;
+  final playbackSwitchingLabel = ''.obs;
+  final isRecoveringInitialLoad = false.obs;
+  final initialLoadRecoveryLabel = ''.obs;
+  int initialLoadRecoveryCount = 0;
+  bool _initialLoadSettled = false;
+  LiveRoomPlaybackSwitchRequest? _pendingPlaybackSwitch;
+  Timer? _pendingPlaybackSwitchTimer;
+  bool _isRestoringPlaybackSwitch = false;
+  StreamSubscription<bool>? _playerPlayingSubscription;
 
   @override
   void onInit() {
@@ -135,6 +151,13 @@ class LiveRoomController extends PlayerController
     followed.value = DBService.instance.getFollowExist(
       buildLiveRoomRecordId(site.id, roomId),
     );
+    beginInitialLoadSession();
+    _playerPlayingSubscription = player.stream.playing.listen((event) {
+      if (event) {
+        commitPendingPlaybackSwitch();
+        completeInitialLoadSession();
+      }
+    });
     unawaited(loadData());
 
     scrollController.addListener(scrollListener);
@@ -208,6 +231,7 @@ class LiveRoomController extends PlayerController
 
   void refreshRoom() {
     //messages.clear();
+    beginInitialLoadSession();
     _roomLoadToken += 1;
     clearSuperChats();
     liveDanmaku.stop();
@@ -246,6 +270,243 @@ class LiveRoomController extends PlayerController
 
   LiveRoomErrorPresentation get errorPresentation =>
       resolveLiveRoomErrorPresentation(error);
+
+  bool get isInitialLoadPending => !_initialLoadSettled;
+
+  bool get showInitialLoadRecoveryOverlay =>
+      shouldShowInitialLoadRecoveryOverlay(
+        isRecoveringInitialLoad: isRecoveringInitialLoad.value,
+        loadError: loadError.value,
+        isRoomSwitching: isRoomSwitching.value,
+      );
+
+  bool get showPlaybackSwitchOverlay =>
+      isSwitchingPlaybackSource.value &&
+      !isRoomSwitching.value &&
+      !showInitialLoadRecoveryOverlay;
+
+  void beginInitialLoadSession() {
+    _initialLoadSettled = false;
+    isRecoveringInitialLoad.value = false;
+    initialLoadRecoveryLabel.value = '';
+    initialLoadRecoveryCount = 0;
+    _pendingPlaybackSwitch = null;
+    _pendingPlaybackSwitchTimer?.cancel();
+    clearPlaybackSwitchingState();
+    errorMsg.value = '';
+  }
+
+  void completeInitialLoadSession() {
+    _initialLoadSettled = true;
+    isRecoveringInitialLoad.value = false;
+    initialLoadRecoveryLabel.value = '';
+    initialLoadRecoveryCount = 0;
+  }
+
+  void beginPlaybackSwitching({
+    required LiveRoomPlaybackSwitchKind kind,
+    required String targetLabel,
+  }) {
+    isSwitchingPlaybackSource.value = true;
+    playbackSwitchingLabel.value = buildPlaybackSwitchLabel(
+      kind: kind,
+      targetLabel: targetLabel,
+    );
+    errorMsg.value = '';
+  }
+
+  void clearPlaybackSwitchingState() {
+    isSwitchingPlaybackSource.value = false;
+    playbackSwitchingLabel.value = '';
+  }
+
+  void schedulePendingPlaybackSwitchCommit({
+    Duration delay = const Duration(milliseconds: 800),
+  }) {
+    _pendingPlaybackSwitchTimer?.cancel();
+    _pendingPlaybackSwitchTimer = Timer(delay, () {
+      if (_pendingPlaybackSwitch != null && !_isRestoringPlaybackSwitch) {
+        commitPendingPlaybackSwitch();
+      }
+    });
+  }
+
+  LiveRoomPlaybackSnapshot capturePlaybackSnapshot() {
+    return LiveRoomPlaybackSnapshot(
+      qualityIndex: currentQuality,
+      qualityLabel: currentQualityInfo.value,
+      playUrls: List<String>.from(playUrls),
+      playHeaders:
+          playHeaders == null ? null : Map<String, String>.from(playHeaders!),
+      lineIndex: currentLineIndex,
+      lineLabel: currentLineInfo.value,
+    );
+  }
+
+  Future<void> openPlaybackSources({
+    required List<String> urls,
+    Map<String, String>? headers,
+    int initialIndex = 0,
+  }) async {
+    final mediaList = normalizePlaybackUrls(
+      urls,
+      forceHttps: AppSettingsController.instance.playerForceHttps.value,
+    ).map((url) => Media(url, httpHeaders: headers)).toList();
+
+    await initializePlayer();
+    await player.open(Playlist(mediaList));
+    if (initialIndex > 0) {
+      await player.jump(initialIndex);
+    }
+  }
+
+  void commitPendingPlaybackSwitch() {
+    final pending = _pendingPlaybackSwitch;
+    if (pending == null) {
+      return;
+    }
+    _pendingPlaybackSwitchTimer?.cancel();
+    currentQuality = pending.targetQualityIndex;
+    currentQualityInfo.value = pending.targetQualityLabel;
+    playUrls.value = List<String>.from(pending.targetPlayUrls);
+    playHeaders = pending.targetPlayHeaders == null
+        ? null
+        : Map<String, String>.from(pending.targetPlayHeaders!);
+    currentLineIndex = pending.targetLineIndex;
+    currentLineInfo.value = pending.targetLineLabel;
+    mediaErrorRetryCount = 0;
+    errorMsg.value = '';
+    _pendingPlaybackSwitch = null;
+    clearPlaybackSwitchingState();
+  }
+
+  Future<void> rollbackPendingPlaybackSwitch({
+    required Object rawError,
+    StackTrace? stackTrace,
+  }) async {
+    final pending = _pendingPlaybackSwitch;
+    if (pending == null) {
+      _pendingPlaybackSwitchTimer?.cancel();
+      clearPlaybackSwitchingState();
+      return;
+    }
+
+    _pendingPlaybackSwitchTimer?.cancel();
+    _pendingPlaybackSwitch = null;
+    clearPlaybackSwitchingState();
+
+    if (!canRestorePlaybackSnapshot(pending.previous)) {
+      presentLiveRoomLoadError(rawError, stackTrace);
+      return;
+    }
+
+    try {
+      _isRestoringPlaybackSwitch = true;
+      currentQuality = pending.previous.qualityIndex;
+      currentQualityInfo.value = pending.previous.qualityLabel;
+      playUrls.value = List<String>.from(pending.previous.playUrls);
+      playHeaders = pending.previous.playHeaders == null
+          ? null
+          : Map<String, String>.from(pending.previous.playHeaders!);
+      currentLineIndex = pending.previous.lineIndex;
+      currentLineInfo.value = pending.previous.lineLabel;
+      mediaErrorRetryCount = 0;
+      errorMsg.value = '';
+      await openPlaybackSources(
+        urls: pending.previous.playUrls,
+        headers: pending.previous.playHeaders,
+        initialIndex: pending.previous.lineIndex,
+      );
+      SmartDialog.showToast(buildPlaybackSwitchRollbackToast(pending.kind));
+    } catch (e, s) {
+      Log.e("回退播放切换失败：$e", s);
+      presentLiveRoomLoadError(rawError, stackTrace ?? s);
+    } finally {
+      _isRestoringPlaybackSwitch = false;
+    }
+  }
+
+  void presentLiveRoomLoadError(
+    Object rawError, [
+    StackTrace? stackTrace,
+  ]) {
+    _pendingPlaybackSwitch = null;
+    _pendingPlaybackSwitchTimer?.cancel();
+    loadError.value = true;
+    error = rawError;
+    errorStackTrace = stackTrace;
+    errorMsg.value = '';
+    isRecoveringInitialLoad.value = false;
+    initialLoadRecoveryLabel.value = '';
+    _initialLoadSettled = true;
+    update();
+  }
+
+  bool scheduleInitialLoadRecovery({
+    required Object rawError,
+    required StackTrace? stackTrace,
+    required String errorType,
+    required int sourceLoadToken,
+  }) {
+    if (!shouldAttemptInitialLoadRecovery(
+      errorType: errorType,
+      recoveryCount: initialLoadRecoveryCount,
+      initialLoadSettled: _initialLoadSettled,
+    )) {
+      return false;
+    }
+
+    final nextAttempt = initialLoadRecoveryCount + 1;
+    final retryDelay = resolveInitialLoadRecoveryDelay(initialLoadRecoveryCount);
+    error = rawError;
+    errorStackTrace = stackTrace;
+    errorMsg.value = '';
+    loadError.value = false;
+    isRecoveringInitialLoad.value = true;
+    initialLoadRecoveryLabel.value = buildInitialLoadRecoveryLabel(
+      errorType: errorType,
+      nextAttempt: nextAttempt,
+    );
+    initialLoadRecoveryCount = nextAttempt;
+    Log.d('首屏恢复中：$errorType，第 $nextAttempt 次自动重试');
+
+    unawaited(Future<void>(() async {
+      if (retryDelay > Duration.zero) {
+        await Future.delayed(retryDelay);
+      }
+      if (!_isCurrentRoomLoadToken(sourceLoadToken)) {
+        return;
+      }
+      await loadData(
+        showGlobalLoading: false,
+        isInitialRecoveryAttempt: true,
+      );
+    }));
+    return true;
+  }
+
+  bool handleInitialLoadFailure({
+    required Object rawError,
+    StackTrace? stackTrace,
+    required int sourceLoadToken,
+  }) {
+    if (!isInitialLoadPending) {
+      return false;
+    }
+
+    final presentation = resolveLiveRoomErrorPresentation(rawError);
+    if (scheduleInitialLoadRecovery(
+      rawError: rawError,
+      stackTrace: stackTrace,
+      errorType: presentation.type,
+      sourceLoadToken: sourceLoadToken,
+    )) {
+      return true;
+    }
+
+    presentLiveRoomLoadError(rawError, stackTrace);
+    return true;
+  }
 
   void clearSuperChats() {
     superChats.clear();
@@ -356,24 +617,16 @@ class LiveRoomController extends PlayerController
   /// 接收到WebSocket信息
   void onWSMessage(LiveMessage msg) {
     if (msg.type == LiveMessageType.chat) {
-      // 关键词屏蔽检查
-      for (var keyword in AppSettingsController.instance.shieldList) {
-        Pattern? pattern;
-        if (Utils.isRegexFormat(keyword)) {
-          String removedSlash = Utils.removeRegexFormat(keyword);
-          try {
-            pattern = RegExp(removedSlash);
-          } catch (e) {
-            // should avoid this during add keyword
-            Log.d("关键词：$keyword 正则格式错误");
-          }
-        } else {
-          pattern = keyword;
-        }
-        if (pattern != null && msg.message.contains(pattern)) {
-          Log.d("关键词：$keyword\n已屏蔽消息内容：${msg.message}");
-          return;
-        }
+      final userName = normalizeChatUserName(msg.userName);
+      if (userName.isNotEmpty &&
+          !isChatSystemMessage(userName) &&
+          shouldDropChatMessage(
+            userName: userName,
+            message: msg.message,
+            siteId: site.id,
+            tempMutedUsers: tempMutedUsers,
+          )) {
+        return;
       }
 
       appendRoomMessage(msg);
@@ -445,11 +698,16 @@ class LiveRoomController extends PlayerController
     int? reuseLoadToken,
     LiveRoomDetail? prefetchedDetail,
     bool showGlobalLoading = true,
+    bool isInitialRecoveryAttempt = false,
   }) async {
     final loadToken = reuseLoadToken ?? ++_roomLoadToken;
     try {
       if (showGlobalLoading) {
         SmartDialog.showLoading(msg: "");
+      }
+      if (!isInitialRecoveryAttempt) {
+        isRecoveringInitialLoad.value = false;
+        initialLoadRecoveryLabel.value = '';
       }
       loadError.value = false;
       error = null;
@@ -509,7 +767,9 @@ class LiveRoomController extends PlayerController
       }
       liveStatus.value = detail.value!.status || detail.value!.isRecord;
       if (liveStatus.value) {
-        await getPlayQualites(loadToken: loadToken);
+        await getPlayQualitesForInitialLoad(loadToken: loadToken);
+      } else {
+        completeInitialLoadSession();
       }
       if (detail.value!.isRecord) {
         addSysMsg("当前主播未开播，正在轮播录像");
@@ -532,10 +792,14 @@ class LiveRoomController extends PlayerController
         return;
       }
       Log.e(e.toString(), s);
-      //SmartDialog.showToast(e.toString());
-      loadError.value = true;
-      error = e;
-      errorStackTrace = s;
+      if (handleInitialLoadFailure(
+        rawError: e,
+        stackTrace: s,
+        sourceLoadToken: loadToken,
+      )) {
+        return;
+      }
+      presentLiveRoomLoadError(e, s);
     } finally {
       if (showGlobalLoading && _isCurrentRoomLoadToken(loadToken)) {
         SmartDialog.dismiss(status: SmartStatus.loading);
@@ -606,6 +870,152 @@ class LiveRoomController extends PlayerController
     await initPlaylist();
   }
 
+  Future<void> getPlayQualitesForInitialLoad({int? loadToken}) async {
+    qualites.clear();
+    currentQuality = -1;
+
+    final playQualites =
+        await site.liveSite.getPlayQualites(detail: detail.value!);
+    if (loadToken != null && !_isCurrentRoomLoadToken(loadToken)) {
+      return;
+    }
+    if (playQualites.isEmpty) {
+      throw StateError('player quality unavailable');
+    }
+
+    qualites.value = playQualites;
+    final qualityLevel = await getQualityLevel();
+    currentQuality = resolveInitialQualityIndex(
+      qualityCount: playQualites.length,
+      qualityLevel: qualityLevel,
+    );
+    await getPlayUrlForInitialLoad(loadToken: loadToken);
+  }
+
+  Future<void> getPlayUrlForInitialLoad({int? loadToken}) async {
+    playUrls.clear();
+    currentQualityInfo.value = qualites[currentQuality].quality;
+    currentLineInfo.value = "";
+    currentLineIndex = -1;
+    final currentDetail = detail.value;
+    if (currentDetail == null) {
+      throw StateError('room detail unavailable');
+    }
+
+    final playUrl = await site.liveSite
+        .getPlayUrls(detail: currentDetail, quality: qualites[currentQuality]);
+    if (loadToken != null && !_isCurrentRoomLoadToken(loadToken)) {
+      return;
+    }
+    if (playUrl.urls.isEmpty) {
+      throw StateError('player stream unavailable');
+    }
+
+    playUrls.value = playUrl.urls;
+    playHeaders = playUrl.headers;
+    currentLineIndex = 0;
+    currentLineInfo.value = buildLiveRoomLineLabel(currentLineIndex);
+    mediaErrorRetryCount = 0;
+    await initPlaylist();
+  }
+
+  Future<void> switchPlaybackQuality(int nextQualityIndex) async {
+    if (!shouldStartPlaybackSwitch(
+      isSwitchingPlaybackSource: isSwitchingPlaybackSource.value,
+      currentIndex: currentQuality,
+      nextIndex: nextQualityIndex,
+      itemCount: qualites.length,
+    )) {
+      return;
+    }
+
+    final currentDetail = detail.value;
+    if (currentDetail == null) {
+      return;
+    }
+
+    final snapshot = capturePlaybackSnapshot();
+    final nextQuality = qualites[nextQualityIndex];
+    beginPlaybackSwitching(
+      kind: LiveRoomPlaybackSwitchKind.quality,
+      targetLabel: nextQuality.quality,
+    );
+
+    try {
+      final playUrl = await site.liveSite
+          .getPlayUrls(detail: currentDetail, quality: nextQuality);
+      if (playUrl.urls.isEmpty) {
+        throw StateError('player stream unavailable');
+      }
+      _pendingPlaybackSwitch = LiveRoomPlaybackSwitchRequest.forQuality(
+        previous: snapshot,
+        targetQualityIndex: nextQualityIndex,
+        targetQualityLabel: nextQuality.quality,
+        targetPlayUrls: playUrl.urls,
+        targetPlayHeaders: playUrl.headers,
+        targetLineLabel: buildLiveRoomLineLabel(0),
+      );
+      await openPlaybackSources(
+        urls: playUrl.urls,
+        headers: playUrl.headers,
+      );
+      schedulePendingPlaybackSwitchCommit();
+    } catch (e, s) {
+      Log.e("切换清晰度失败：$e", s);
+      if (_pendingPlaybackSwitch != null) {
+        await rollbackPendingPlaybackSwitch(
+          rawError: e,
+          stackTrace: s,
+        );
+      } else {
+        clearPlaybackSwitchingState();
+        if (canRestorePlaybackSnapshot(snapshot)) {
+          SmartDialog.showToast(
+            buildPlaybackSwitchRollbackToast(
+              LiveRoomPlaybackSwitchKind.quality,
+            ),
+          );
+        } else {
+          SmartDialog.showToast("切换清晰度失败");
+        }
+      }
+    }
+  }
+
+  Future<void> switchPlaybackLine(int nextLineIndex) async {
+    if (!shouldStartPlaybackSwitch(
+      isSwitchingPlaybackSource: isSwitchingPlaybackSource.value,
+      currentIndex: currentLineIndex,
+      nextIndex: nextLineIndex,
+      itemCount: playUrls.length,
+    )) {
+      return;
+    }
+
+    final snapshot = capturePlaybackSnapshot();
+    final targetLineLabel = buildLiveRoomLineLabel(nextLineIndex);
+    beginPlaybackSwitching(
+      kind: LiveRoomPlaybackSwitchKind.line,
+      targetLabel: targetLineLabel,
+    );
+    _pendingPlaybackSwitch = LiveRoomPlaybackSwitchRequest.forLine(
+      previous: snapshot,
+      targetLineIndex: nextLineIndex,
+      targetLineLabel: targetLineLabel,
+    );
+
+    try {
+      await player.jump(nextLineIndex);
+      schedulePendingPlaybackSwitchCommit();
+    } catch (e, s) {
+      Log.e("切换线路失败：$e", s);
+      await rollbackPendingPlaybackSwitch(
+        rawError: e,
+        stackTrace: s,
+      );
+    }
+  }
+
   void changePlayLine(int index) {
     currentLineIndex = index;
     //重置错误次数
@@ -638,7 +1048,26 @@ class LiveRoomController extends PlayerController
   @override
   void mediaEnd() async {
     super.mediaEnd();
-    if (shouldRetryPlayback(retryCount: mediaErrorRetryCount)) {
+    if (_pendingPlaybackSwitch != null && !_isRestoringPlaybackSwitch) {
+      await rollbackPendingPlaybackSwitch(
+        rawError: StateError('player stream ended during playback switch'),
+      );
+      return;
+    }
+    final hasRetryBudget =
+        shouldRetryPlayback(retryCount: mediaErrorRetryCount);
+    if (!hasRetryBudget &&
+        !hasNextPlayLine(
+          currentLineIndex: currentLineIndex,
+          playUrlCount: playUrls.length,
+        ) &&
+        handleInitialLoadFailure(
+          rawError: StateError('player stream ended during initial load'),
+          sourceLoadToken: _roomLoadToken,
+        )) {
+      return;
+    }
+    if (hasRetryBudget) {
       Log.d("播放结束，尝试第${mediaErrorRetryCount + 1}次刷新");
       final retryDelay = resolvePlaybackRetryDelay(mediaErrorRetryCount);
       if (retryDelay > Duration.zero) {
@@ -667,8 +1096,29 @@ class LiveRoomController extends PlayerController
   int mediaErrorRetryCount = 0;
   @override
   void mediaError(String error) async {
-    super.mediaEnd();
-    if (shouldRetryPlayback(retryCount: mediaErrorRetryCount)) {
+    super.mediaError(error);
+    if (_pendingPlaybackSwitch != null && !_isRestoringPlaybackSwitch) {
+      await rollbackPendingPlaybackSwitch(
+        rawError: Exception(error),
+        stackTrace: StackTrace.current,
+      );
+      return;
+    }
+    final hasRetryBudget =
+        shouldRetryPlayback(retryCount: mediaErrorRetryCount);
+    if (!hasRetryBudget &&
+        !hasNextPlayLine(
+          currentLineIndex: currentLineIndex,
+          playUrlCount: playUrls.length,
+        ) &&
+        handleInitialLoadFailure(
+          rawError: Exception(error),
+          stackTrace: StackTrace.current,
+          sourceLoadToken: _roomLoadToken,
+        )) {
+      return;
+    }
+    if (hasRetryBudget) {
       Log.d("播放失败，尝试第${mediaErrorRetryCount + 1}次刷新");
       final retryDelay = resolvePlaybackRetryDelay(mediaErrorRetryCount);
       if (retryDelay > Duration.zero) {
@@ -855,8 +1305,7 @@ class LiveRoomController extends PlayerController
         groupValue: currentQuality,
         onChanged: (e) {
           Get.back();
-          currentQuality = e ?? 0;
-          getPlayUrl();
+          unawaited(switchPlaybackQuality(e ?? 0));
         },
         child: ListView.builder(
           itemCount: qualites.length,
@@ -879,9 +1328,7 @@ class LiveRoomController extends PlayerController
         groupValue: currentLineIndex,
         onChanged: (e) {
           Get.back();
-          //currentLineIndex = i;
-          //setPlayer();
-          changePlayLine(e ?? 0);
+          unawaited(switchPlaybackLine(e ?? 0));
         },
         child: ListView.builder(
           itemCount: playUrls.length,
@@ -942,6 +1389,165 @@ class LiveRoomController extends PlayerController
         ),
       ),
     );
+  }
+
+  bool isTempMutedUser(String userName) {
+    final value = normalizeChatUserName(userName);
+    if (value.isEmpty) {
+      return false;
+    }
+    return tempMutedUsers.contains(value);
+  }
+
+  void toggleTempMuteUser(String userName) {
+    final value = normalizeChatUserName(userName);
+    if (value.isEmpty || isChatSystemMessage(value)) {
+      SmartDialog.showToast("用户名不能为空");
+      return;
+    }
+    if (tempMutedUsers.contains(value)) {
+      tempMutedUsers.remove(value);
+      tempMutedUsers.refresh();
+      SmartDialog.showToast("已取消临时禁言：$value");
+      return;
+    }
+    tempMutedUsers.add(value);
+    tempMutedUsers.refresh();
+    SmartDialog.showToast("已加入临时禁言：$value");
+  }
+
+  void clearTempMutedUsers() {
+    if (tempMutedUsers.isEmpty) {
+      SmartDialog.showToast("当前没有临时禁言用户");
+      return;
+    }
+    tempMutedUsers.clear();
+    tempMutedUsers.refresh();
+    SmartDialog.showToast("已恢复全部临时禁言用户");
+  }
+
+  void togglePlatformUserShield(String userName) {
+    final value = normalizeChatUserName(userName);
+    if (value.isEmpty || isChatSystemMessage(value)) {
+      SmartDialog.showToast("用户名不能为空");
+      return;
+    }
+    final shielded = AppSettingsController.instance.toggleUserShield(
+      value,
+      siteId: site.id,
+    );
+    SmartDialog.showToast(
+      shielded ? "已屏蔽用户：$value（${site.name}）" : "已取消屏蔽用户：$value",
+    );
+  }
+
+  void copyChatUserName(String userName) {
+    final value = normalizeChatUserName(userName);
+    if (value.isEmpty || isChatSystemMessage(value)) {
+      SmartDialog.showToast("用户名不能为空");
+      return;
+    }
+    Utils.copyToClipboard(value);
+  }
+
+  void copyChatMessageContent(String message) {
+    final value = normalizeChatMessageText(message);
+    if (value.isEmpty) {
+      SmartDialog.showToast("弹幕内容为空");
+      return;
+    }
+    Utils.copyToClipboard(value);
+  }
+
+  void copyFullChatMessage(LiveMessage message) {
+    final text = buildFullChatCopyText(
+      userName: message.userName,
+      message: message.message,
+    );
+    if (text.isEmpty) {
+      SmartDialog.showToast("内容为空");
+      return;
+    }
+    Utils.copyToClipboard(text);
+  }
+
+  void addMessageAsKeywordShield(String message) {
+    final value = normalizeChatMessageText(message);
+    if (value.isEmpty) {
+      SmartDialog.showToast("弹幕内容为空");
+      return;
+    }
+    AppSettingsController.instance.addShieldList(value);
+    SmartDialog.showToast("已添加关键词屏蔽");
+  }
+
+  Future<void> handleChatMessageMenuAction({
+    required ChatMessageMenuAction action,
+    required LiveMessage message,
+  }) async {
+    switch (action) {
+      case ChatMessageMenuAction.togglePlatformShield:
+        togglePlatformUserShield(message.userName);
+        break;
+      case ChatMessageMenuAction.toggleTempMute:
+        toggleTempMuteUser(message.userName);
+        break;
+      case ChatMessageMenuAction.copyUserName:
+        copyChatUserName(message.userName);
+        break;
+      case ChatMessageMenuAction.copyMessage:
+        copyChatMessageContent(message.message);
+        break;
+      case ChatMessageMenuAction.copyFull:
+        copyFullChatMessage(message);
+        break;
+      case ChatMessageMenuAction.addKeywordShield:
+        addMessageAsKeywordShield(message.message);
+        break;
+      case ChatMessageMenuAction.clearTempMutes:
+        clearTempMutedUsers();
+        break;
+    }
+  }
+
+  /// 平台用户屏蔽 / 临时禁言 / 关键词屏蔽统一过滤。
+  bool shouldDropChatMessage({
+    required String userName,
+    required String message,
+    required String siteId,
+    required Iterable<String> tempMutedUsers,
+  }) {
+    final settings = AppSettingsController.instance;
+    if (settings.isUserShielded(userName, siteId: siteId)) {
+      Log.d("已过滤平台屏蔽用户: $userName");
+      return true;
+    }
+    final muted = tempMutedUsers
+        .map(normalizeChatUserName)
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    if (muted.contains(normalizeChatUserName(userName))) {
+      Log.d("已过滤临时禁言用户: $userName");
+      return true;
+    }
+    for (final keyword in settings.shieldList) {
+      Pattern? pattern;
+      if (Utils.isRegexFormat(keyword)) {
+        final removedSlash = Utils.removeRegexFormat(keyword);
+        try {
+          pattern = RegExp(removedSlash);
+        } catch (e) {
+          Log.d("关键词：$keyword 正则格式错误");
+        }
+      } else {
+        pattern = keyword;
+      }
+      if (pattern != null && message.contains(pattern)) {
+        Log.d("关键词：$keyword\n已屏蔽消息内容：$message");
+        return true;
+      }
+    }
+    return false;
   }
 
   void showDanmuShield() {
@@ -1134,6 +1740,7 @@ class LiveRoomController extends PlayerController
         switchPlan.nextFollowLookupKey,
       );
 
+      beginInitialLoadSession();
       resetTransientRoomState();
       detail.value = roomDetail;
       danmakuController?.clear();
@@ -1301,6 +1908,8 @@ class LiveRoomController extends PlayerController
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     unawaited(restoreDesktopWindowChrome());
+    _playerPlayingSubscription?.cancel();
+    _pendingPlaybackSwitchTimer?.cancel();
     scrollController.removeListener(scrollListener);
     scrollController.dispose();
     autoExitTimer?.cancel();

@@ -21,4 +21,14 @@ class DanmuShieldController extends BaseController {
   void remove(String item) {
     settingsController.removeShieldList(item);
   }
+
+  void removeUserShield({
+    required String userName,
+    required String siteId,
+  }) {
+    settingsController.removeUserShield(
+      userName,
+      siteId: siteId,
+    );
+  }
 }
