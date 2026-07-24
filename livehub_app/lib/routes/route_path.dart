@@ -12,6 +12,9 @@ class RoutePath {
   /// 直播间
   static const kLiveRoomDetail = "/room/detail";
 
+  /// 同屏多开监控
+  static const kMultiRoom = "/room/multi";
+
   /// 弹幕设置
   static const kSettingsDanmu = "/settings/danmu";
 

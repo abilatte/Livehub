@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:livehub_app/app/app_style.dart';
 import 'package:livehub_app/app/sites.dart';
+import 'package:livehub_app/app/utils.dart';
 import 'package:livehub_app/modules/settings/danmu_shield/danmu_shield_controller.dart';
 
 class DanmuShieldPage extends GetView<DanmuShieldController> {
@@ -40,7 +41,8 @@ class DanmuShieldPage extends GetView<DanmuShieldController> {
           AppStyle.vGap12,
           Obx(
             () => Text(
-              "已添加${controller.settingsController.shieldList.length}个关键词（点击移除）",
+              "已添加${controller.settingsController.shieldList.length}个关键词（点击移除）"
+              "${controller.settingsController.activeShieldPresetName.value.isEmpty ? "" : " · 当前预设：${controller.settingsController.activeShieldPresetName.value}"}",
               style: Get.textTheme.titleSmall,
             ),
           ),
@@ -74,6 +76,71 @@ class DanmuShieldPage extends GetView<DanmuShieldController> {
                   )
                   .toList(),
             ),
+          ),
+          AppStyle.vGap24,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "屏蔽词预设",
+                  style: Get.textTheme.titleSmall,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  final name = await Utils.showEditTextDialog(
+                    "",
+                    title: "保存为预设",
+                    hintText: "预设名称",
+                  );
+                  if (name != null) {
+                    await controller.saveCurrentAsPreset(name);
+                  }
+                },
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text("保存当前"),
+              ),
+            ],
+          ),
+          AppStyle.vGap8,
+          Text(
+            "点击预设名称应用关键词列表；点右侧删除可移除预设。",
+            style: Get.textTheme.bodySmall,
+          ),
+          AppStyle.vGap12,
+          Obx(
+            () {
+              final presets = controller.settingsController.shieldPresets;
+              if (presets.isEmpty) {
+                return Text(
+                  "暂无预设。添加关键词后点「保存当前」即可创建。",
+                  style: Get.textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                );
+              }
+              return Column(
+                children: presets.map((preset) {
+                  final active = controller
+                          .settingsController.activeShieldPresetName.value ==
+                      preset.name;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      preset.name,
+                      style: TextStyle(
+                        fontWeight:
+                            active ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    subtitle: Text("${preset.keywords.length} 个关键词"),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => controller.removePreset(preset.name),
+                    ),
+                    onTap: () => controller.applyPreset(preset.name),
+                  );
+                }).toList(),
+              );
+            },
           ),
           AppStyle.vGap24,
           Obx(

@@ -31,4 +31,24 @@ class DanmuShieldController extends BaseController {
       siteId: siteId,
     );
   }
+
+  Future<void> saveCurrentAsPreset(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      SmartDialog.showToast("请输入预设名称");
+      return;
+    }
+    await settingsController.saveCurrentKeywordsAsPreset(trimmed);
+    SmartDialog.showToast("已保存预设：$trimmed");
+  }
+
+  Future<void> applyPreset(String name) async {
+    await settingsController.applyShieldPreset(name);
+    SmartDialog.showToast("已应用预设：$name");
+  }
+
+  Future<void> removePreset(String name) async {
+    await settingsController.removeShieldPreset(name);
+    SmartDialog.showToast("已删除预设：$name");
+  }
 }

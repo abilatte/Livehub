@@ -18,6 +18,8 @@ mixin AppSettingsPlayerMixin on GetxController {
   final videoOutputDriver = "".obs;
   final audioOutputDriver = "".obs;
   final videoHardwareDecoder = "".obs;
+  final mpvProfile = "balanced".obs;
+  final mpvAdvancedOptions = "".obs;
 
   void initPlayerSettings() {
     qualityLevel.value = LocalStorageService.instance
@@ -61,6 +63,14 @@ mixin AppSettingsPlayerMixin on GetxController {
     videoHardwareDecoder.value = LocalStorageService.instance.getValue(
       LocalStorageService.kVideoHardwareDecoder,
       "auto",
+    );
+    mpvProfile.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kMpvProfile,
+      "balanced",
+    );
+    mpvAdvancedOptions.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kMpvAdvancedOptions,
+      "",
     );
   }
 
@@ -188,6 +198,22 @@ mixin AppSettingsPlayerMixin on GetxController {
     videoHardwareDecoder.value = value;
     LocalStorageService.instance.setValue(
       LocalStorageService.kVideoHardwareDecoder,
+      value,
+    );
+  }
+
+  void setMpvProfile(String value) {
+    mpvProfile.value = value;
+    LocalStorageService.instance.setValue(
+      LocalStorageService.kMpvProfile,
+      value,
+    );
+  }
+
+  void setMpvAdvancedOptions(String value) {
+    mpvAdvancedOptions.value = value;
+    LocalStorageService.instance.setValue(
+      LocalStorageService.kMpvAdvancedOptions,
       value,
     );
   }

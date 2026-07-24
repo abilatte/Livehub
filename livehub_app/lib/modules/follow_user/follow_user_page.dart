@@ -27,6 +27,26 @@ class FollowUserPage extends GetView<FollowUserController> {
         scrolledUnderElevation: 0,
         actions: [
           Obx(
+            () => IconButton(
+              tooltip: controller.multiSelectMode.value ? "取消多选" : "多开同屏",
+              onPressed: controller.toggleMultiSelectMode,
+              icon: Icon(
+                controller.multiSelectMode.value
+                    ? Icons.close
+                    : Icons.grid_view_rounded,
+              ),
+            ),
+          ),
+          Obx(
+            () => controller.multiSelectMode.value
+                ? IconButton(
+                    tooltip: "打开多开",
+                    onPressed: controller.openMultiRoomFromSelection,
+                    icon: const Icon(Icons.play_circle_outline),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          Obx(
             () => controller.followService.updating.value
                 ? const IconButton(
                     onPressed: null,
@@ -84,15 +104,44 @@ class FollowUserPage extends GetView<FollowUserController> {
               itemBuilder: (_, i) {
                 final item = controller.list[i];
                 final site = Sites.allSites[item.siteId]!;
-                return FollowUserItem(
-                  item: item,
-                  onRemove: () {
-                    controller.removeItem(item);
-                  },
-                  onTap: () {
-                    AppNavigator.toLiveRoomDetail(
-                      site: site,
-                      roomId: item.roomId,
+                return Obx(
+                  () {
+                    final multi = controller.multiSelectMode.value;
+                    final selected = controller.selectedIds.contains(item.id);
+                    return Stack(
+                      children: [
+                        FollowUserItem(
+                          item: item,
+                          onRemove: multi
+                              ? null
+                              : () {
+                                  controller.removeItem(item);
+                                },
+                          onTap: () {
+                            if (multi) {
+                              controller.toggleSelect(item);
+                              return;
+                            }
+                            AppNavigator.toLiveRoomDetail(
+                              site: site,
+                              roomId: item.roomId,
+                            );
+                          },
+                        ),
+                        if (multi)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Icon(
+                              selected
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              color: selected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.grey,
+                            ),
+                          ),
+                      ],
                     );
                   },
                 );

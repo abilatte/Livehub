@@ -15,9 +15,11 @@ export 'src/danmaku/bilibili_danmaku.dart';
 export 'src/danmaku/douyu_danmaku.dart';
 export 'src/danmaku/huya_danmaku.dart';
 export 'src/danmaku/douyin_danmaku.dart';
+export 'src/danmaku/douyin_emoji_assets.dart';
 
 export 'src/model/live_category_result.dart';
 export 'src/model/live_category.dart';
+export 'src/model/live_contribution_rank.dart';
 export 'src/model/live_play_quality.dart';
 export 'src/model/live_room_detail.dart';
 export 'src/model/live_room_item.dart';

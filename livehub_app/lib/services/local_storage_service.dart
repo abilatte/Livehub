@@ -166,6 +166,18 @@ class LocalStorageService extends GetxService {
   /// 开启多线程更新关注
   static const String kUpdateFollowThreadCount = "UpdateFollowThreadCount";
 
+  /// 弹幕屏蔽词预设（JSON 数组）
+  static const String kDanmuShieldPresets = "DanmuShieldPresets";
+
+  /// 当前选中的屏蔽词预设名
+  static const String kDanmuShieldActivePreset = "DanmuShieldActivePreset";
+
+  /// MPV 性能档位：performance / balanced / quality
+  static const String kMpvProfile = "MpvProfile";
+
+  /// MPV 高级参数（多行 key=value）
+  static const String kMpvAdvancedOptions = "MpvAdvancedOptions";
+
   late Box settingsBox;
   late Box<String> shieldBox;
 

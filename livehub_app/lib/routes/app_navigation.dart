@@ -5,6 +5,8 @@ import 'package:livehub_app/app/constant.dart';
 import 'package:livehub_app/app/controller/app_settings_controller.dart';
 import 'package:livehub_app/app/sites.dart';
 import 'package:livehub_app/app/utils.dart';
+import 'package:livehub_app/modules/multi_room/multi_room_models.dart';
+import 'package:livehub_app/modules/multi_room/multi_room_utils.dart';
 import 'package:livehub_app/routes/route_path.dart';
 import 'package:livehub_app/services/bilibili_account_service.dart';
 import 'package:livehub_core/livehub_core.dart';
@@ -54,5 +56,15 @@ class AppNavigator {
   /// 跳转至哔哩哔哩登录
   static Future toBiliBiliLogin() async {
     await Get.toNamed(RoutePath.kBiliBiliQRLogin);
+  }
+
+  /// 跳转至同屏多开监控（至少 2 个房间）
+  static void toMultiRoom(List<MultiRoomItem> rooms) {
+    final capped = MultiRoomUtils.capRooms(rooms);
+    if (capped.length < 2) {
+      SmartDialog.showToast("请至少选择 2 个直播间进行多开");
+      return;
+    }
+    Get.toNamed(RoutePath.kMultiRoom, arguments: capped);
   }
 }

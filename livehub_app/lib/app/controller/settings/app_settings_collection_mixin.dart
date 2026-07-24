@@ -2,7 +2,9 @@ import 'package:get/get.dart';
 import 'package:livehub_app/app/constant.dart';
 import 'package:livehub_app/app/controller/settings/app_settings_utils.dart';
 import 'package:livehub_app/app/sites.dart';
+import 'package:livehub_app/models/danmu_shield_preset.dart';
 import 'package:livehub_app/modules/live_room/chat_message_menu_utils.dart';
+import 'package:livehub_app/modules/settings/danmu_shield/danmu_shield_preset_utils.dart';
 import 'package:livehub_app/services/local_storage_service.dart';
 
 mixin AppSettingsCollectionMixin on GetxController {
@@ -11,6 +13,12 @@ mixin AppSettingsCollectionMixin on GetxController {
 
   /// 平台用户屏蔽：siteId -> 用户名列表。
   final userShieldGroups = <String, List<String>>{}.obs;
+
+  /// 命名屏蔽词预设。
+  final shieldPresets = <DanmuShieldPreset>[].obs;
+
+  /// 当前选中的预设名（空表示未选预设）。
+  final activeShieldPresetName = "".obs;
 
   final siteSort = RxList<String>();
   final homeSort = RxList<String>();
@@ -22,6 +30,17 @@ mixin AppSettingsCollectionMixin on GetxController {
     userShieldGroups
       ..clear()
       ..addAll(extractUserShieldGroups(storedValues));
+    final presetRaw = LocalStorageService.instance.getValue(
+      LocalStorageService.kDanmuShieldPresets,
+      "[]",
+    );
+    shieldPresets
+      ..clear()
+      ..addAll(DanmuShieldPresetUtils.decodePresets(presetRaw));
+    activeShieldPresetName.value = LocalStorageService.instance.getValue(
+      LocalStorageService.kDanmuShieldActivePreset,
+      "",
+    );
     initSiteSort();
     initHomeSort();
   }
@@ -186,6 +205,61 @@ mixin AppSettingsCollectionMixin on GetxController {
     }
     addUserShield(userName, siteId: siteId);
     return true;
+  }
+
+  void _persistShieldPresets() {
+    LocalStorageService.instance.setValue(
+      LocalStorageService.kDanmuShieldPresets,
+      DanmuShieldPresetUtils.encodePresets(shieldPresets.toList()),
+    );
+  }
+
+  /// Save current keyword list as a named preset (upsert by name).
+  Future<void> saveCurrentKeywordsAsPreset(String name) async {
+    final preset = DanmuShieldPresetUtils.snapshotFromKeywords(
+      name: name,
+      keywords: shieldList,
+    );
+    if (preset.name.isEmpty) {
+      return;
+    }
+    shieldPresets
+      ..assignAll(DanmuShieldPresetUtils.upsertPreset(shieldPresets, preset));
+    _persistShieldPresets();
+  }
+
+  /// Apply preset keywords as the active shield set used by chat filtering.
+  Future<void> applyShieldPreset(String name) async {
+    DanmuShieldPreset? preset;
+    for (final item in shieldPresets) {
+      if (item.name == name) {
+        preset = item;
+        break;
+      }
+    }
+    if (preset == null) {
+      return;
+    }
+    final keywords = DanmuShieldPresetUtils.applyPresetKeywords(preset);
+    await replaceShieldList(keywords);
+    activeShieldPresetName.value = name;
+    LocalStorageService.instance.setValue(
+      LocalStorageService.kDanmuShieldActivePreset,
+      name,
+    );
+  }
+
+  Future<void> removeShieldPreset(String name) async {
+    shieldPresets
+      ..assignAll(DanmuShieldPresetUtils.removePresetByName(shieldPresets, name));
+    _persistShieldPresets();
+    if (activeShieldPresetName.value == name) {
+      activeShieldPresetName.value = "";
+      LocalStorageService.instance.setValue(
+        LocalStorageService.kDanmuShieldActivePreset,
+        "",
+      );
+    }
   }
 
   void setSiteSort(List<String> values) {

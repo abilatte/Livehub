@@ -1,11 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:livehub_app/app/controller/base_controller.dart';
 import 'package:livehub_app/app/event_bus.dart';
+import 'package:livehub_app/app/sites.dart';
 import 'package:livehub_app/app/utils.dart';
 import 'package:livehub_app/models/db/follow_user.dart';
 import 'package:livehub_app/modules/follow_user/follow_user_filter_utils.dart';
+import 'package:livehub_app/modules/multi_room/multi_room_models.dart';
+import 'package:livehub_app/routes/app_navigation.dart';
 import 'package:livehub_app/services/db_service.dart';
 import 'package:livehub_app/services/follow_service.dart';
 
@@ -15,6 +19,8 @@ class FollowUserController extends BasePageController<FollowUser> {
 
   final filterMode = kDefaultFollowFilters.first.obs;
   final followService = FollowService.instance;
+  final multiSelectMode = false.obs;
+  final selectedIds = <String>{}.obs;
 
   @override
   void onInit() {
@@ -49,6 +55,41 @@ class FollowUserController extends BasePageController<FollowUser> {
 
   void filterData() {
     list.assignAll(_resolveFilterList(filterMode.value.type));
+  }
+
+  void toggleMultiSelectMode() {
+    multiSelectMode.value = !multiSelectMode.value;
+    if (!multiSelectMode.value) {
+      selectedIds.clear();
+    }
+  }
+
+  void toggleSelect(FollowUser item) {
+    if (selectedIds.contains(item.id)) {
+      selectedIds.remove(item.id);
+    } else {
+      selectedIds.add(item.id);
+    }
+    selectedIds.refresh();
+  }
+
+  void openMultiRoomFromSelection() {
+    final selected = list.where((e) => selectedIds.contains(e.id)).toList();
+    final rooms = <MultiRoomItem>[];
+    for (final item in selected) {
+      final site = Sites.allSites[item.siteId];
+      if (site == null) {
+        continue;
+      }
+      rooms.add(MultiRoomItem.fromFollow(item));
+    }
+    if (rooms.length < 2) {
+      SmartDialog.showToast("请至少勾选 2 个关注直播间");
+      return;
+    }
+    multiSelectMode.value = false;
+    selectedIds.clear();
+    AppNavigator.toMultiRoom(rooms);
   }
 
   List<FollowUser> _resolveFilterList(FollowUserFilter type) {

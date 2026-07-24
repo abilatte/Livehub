@@ -28,6 +28,7 @@ import 'package:livehub_app/modules/live_room/live_room_sidebar_tab_utils.dart';
 import 'package:livehub_app/modules/live_room/live_room_startup_recovery_utils.dart';
 import 'package:livehub_app/modules/live_room/player/player_controller.dart';
 import 'package:livehub_app/modules/live_room/super_chat_utils.dart';
+import 'package:livehub_app/modules/live_room/widgets/live_contribution_rank_panel.dart';
 import 'package:livehub_app/modules/settings/danmu_settings_page.dart';
 import 'package:livehub_app/services/db_service.dart';
 import 'package:livehub_app/services/diagnostic_service.dart';
@@ -77,6 +78,11 @@ class LiveRoomController extends PlayerController
 
   /// 当前直播间会话内的临时禁言用户（不持久化）。
   final tempMutedUsers = <String>{}.obs;
+
+  /// 贡献榜
+  final contributionRank = <LiveContributionRankItem>[].obs;
+  final contributionRankLoading = false.obs;
+  final contributionRankError = "".obs;
 
   /// 清晰度数据
   RxList<LivePlayQuality> qualites = RxList<LivePlayQuality>();
@@ -1284,6 +1290,43 @@ class LiveRoomController extends PlayerController
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> loadContributionRank() async {
+    contributionRankLoading.value = true;
+    contributionRankError.value = "";
+    try {
+      final items = await site.liveSite.getContributionRank(
+        roomId: roomId,
+        detail: detail.value,
+      );
+      contributionRank.assignAll(items);
+    } catch (e) {
+      contributionRankError.value = e.toString();
+      contributionRank.clear();
+    } finally {
+      contributionRankLoading.value = false;
+    }
+  }
+
+  void showContributionRankSheet() {
+    unawaited(loadContributionRank());
+    Utils.showBottomSheet(
+      title: "贡献榜",
+      child: SizedBox(
+        height: 420,
+        child: Obx(
+          () => LiveContributionRankPanel(
+            items: contributionRank.toList(),
+            loading: contributionRankLoading.value,
+            errorText: contributionRankError.value.isEmpty
+                ? null
+                : contributionRankError.value,
+            onRetry: loadContributionRank,
+          ),
+        ),
       ),
     );
   }

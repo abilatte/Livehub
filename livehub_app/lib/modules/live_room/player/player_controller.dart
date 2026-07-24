@@ -15,6 +15,7 @@ import 'package:livehub_app/app/controller/desktop_window_controller.dart';
 import 'package:livehub_app/app/log.dart';
 import 'package:livehub_app/app/utils.dart';
 import 'package:livehub_app/modules/live_room/player/player_performance_utils.dart';
+import 'package:livehub_app/services/mpv_options_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -32,10 +33,10 @@ mixin PlayerMixin {
     ),
   );
 
-  /// 初始化播放器并设置 ao 参数
+  /// 初始化播放器并应用 MPV 档位/高级参数
   Future<void> initializePlayer() async {
-    var pp = player.platform as NativePlayer;
-    // 设置音频输出驱动
+    await MpvOptionsService.applyToPlayer(player);
+    // 自定义输出时仍单独设置 ao（与档位 merge 一致）
     if (AppSettingsController.instance.customPlayerOutput.value) {
       if (player.platform is NativePlayer) {
         await (player.platform as dynamic).setProperty(
@@ -46,24 +47,10 @@ mixin PlayerMixin {
     }
   }
 
-  /// 视频控制器
+  /// 视频控制器（消费 MPV merge 结果）
   late final videoController = VideoController(
     player,
-    configuration: AppSettingsController.instance.customPlayerOutput.value
-        ? VideoControllerConfiguration(
-            vo: AppSettingsController.instance.videoOutputDriver.value,
-            hwdec: AppSettingsController.instance.videoHardwareDecoder.value,
-          )
-        : AppSettingsController.instance.playerCompatMode.value
-            ? const VideoControllerConfiguration(
-                vo: 'mediacodec_embed',
-                hwdec: 'mediacodec',
-              )
-            : VideoControllerConfiguration(
-                enableHardwareAcceleration:
-                    AppSettingsController.instance.hardwareDecode.value,
-                androidAttachSurfaceAfterVideoParameters: false,
-              ),
+    configuration: MpvOptionsService.videoControllerConfiguration(),
   );
 }
 

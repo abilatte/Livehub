@@ -34,6 +34,32 @@ import 'package:window_manager/window_manager.dart';
 class LiveRoomPage extends GetView<LiveRoomController> {
   const LiveRoomPage({Key? key}) : super(key: key);
 
+  List<InlineSpan> _buildChatMessageSpans(
+    String message, {
+    required TextStyle style,
+  }) {
+    final isDouyin = controller.site.id == Constant.kDouyin;
+    if (!isDouyin) {
+      return [TextSpan(text: message, style: style)];
+    }
+    final segments = splitDouyinChatWithEmoji(message);
+    return [
+      for (final segment in segments)
+        if (segment.isEmoji && segment.assetPath != null)
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Image.asset(
+              segment.assetPath!,
+              width: style.fontSize != null ? style.fontSize! + 4 : 16,
+              height: style.fontSize != null ? style.fontSize! + 4 : 16,
+              errorBuilder: (_, __, ___) => Text(segment.text, style: style),
+            ),
+          )
+        else
+          TextSpan(text: segment.text, style: style),
+    ];
+  }
+
   Future<void> showChatMessageMenu(
     BuildContext context,
     Offset globalPosition,
@@ -1137,16 +1163,16 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                                 fontSize: AppSettingsController
                                     .instance.chatTextSize.value,
                               ),
-                              children: [
-                                TextSpan(
-                                  text: message.message,
-                                  style: TextStyle(
-                                    color: Get.isDarkMode
-                                        ? Colors.white
-                                        : AppColors.black333,
-                                  ),
-                                )
-                              ],
+                              children: _buildChatMessageSpans(
+                                message.message,
+                                style: TextStyle(
+                                  color: Get.isDarkMode
+                                      ? Colors.white
+                                      : AppColors.black333,
+                                  fontSize: AppSettingsController
+                                      .instance.chatTextSize.value,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1161,16 +1187,16 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                         fontSize:
                             AppSettingsController.instance.chatTextSize.value,
                       ),
-                      children: [
-                        TextSpan(
-                          text: message.message,
-                          style: TextStyle(
-                            color: Get.isDarkMode
-                                ? Colors.white
-                                : AppColors.black333,
-                          ),
-                        )
-                      ],
+                      children: _buildChatMessageSpans(
+                        message.message,
+                        style: TextStyle(
+                          color: Get.isDarkMode
+                              ? Colors.white
+                              : AppColors.black333,
+                          fontSize: AppSettingsController
+                              .instance.chatTextSize.value,
+                        ),
+                      ),
                     ),
                   ),
           );
@@ -1414,6 +1440,11 @@ class LiveRoomPage extends GetView<LiveRoomController> {
               SettingsAction(
                 title: "关键词屏蔽",
                 onTap: controller.showDanmuShield,
+              ),
+              AppStyle.divider,
+              SettingsAction(
+                title: "贡献榜",
+                onTap: controller.showContributionRankSheet,
               ),
               AppStyle.divider,
               SettingsAction(

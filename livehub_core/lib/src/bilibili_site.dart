@@ -18,6 +18,7 @@ import 'package:livehub_core/src/model/live_search_result.dart';
 import 'package:livehub_core/src/model/live_room_detail.dart';
 import 'package:livehub_core/src/model/live_play_quality.dart';
 import 'package:livehub_core/src/model/live_category_result.dart';
+import 'package:livehub_core/src/model/live_contribution_rank.dart';
 
 String normalizeBilibiliImageUrl(String url) {
   if (url.isEmpty) {
@@ -1101,5 +1102,62 @@ class BiliBiliSite implements LiveSite {
     ).firstMatch(resp)?.group(1)?.replaceAll("\\", "");
     accessId = id ?? "";
     return accessId;
+  }
+
+  @override
+  Future<List<LiveContributionRankItem>> getContributionRank({
+    required String roomId,
+    LiveRoomDetail? detail,
+  }) async {
+    try {
+      final roomInfo = await getRoomInfo(roomId: roomId);
+      final roomRankItems = (roomInfo["room_rank_info"]?["user_rank_entry"]
+              ?["user_contribution_rank_entry"]?["item"] as List?) ??
+          const [];
+      if (roomRankItems.isNotEmpty) {
+        return roomRankItems
+            .asMap()
+            .entries
+            .map(
+              (entry) => LiveContributionRankItem.fromGenericMap(
+                Map<String, dynamic>.from(entry.value as Map),
+                fallbackRank: entry.key + 1,
+              ),
+            )
+            .toList();
+      }
+
+      final roomData = roomInfo["room_info"] ?? {};
+      final uid = roomData["uid"]?.toString() ?? "";
+      final realRoomId = roomData["room_id"]?.toString() ?? roomId;
+      if (uid.isEmpty) {
+        return [];
+      }
+
+      final result = await HttpClient.instance.getJson(
+        "https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank",
+        queryParameters: {
+          "ruid": uid,
+          "room_id": realRoomId,
+          "page": 1,
+          "page_size": 50,
+        },
+        header: await getHeader(),
+      );
+      final items = (result["data"]?["item"] as List?) ?? const [];
+      return items
+          .asMap()
+          .entries
+          .map(
+            (entry) => LiveContributionRankItem.fromGenericMap(
+              Map<String, dynamic>.from(entry.value as Map),
+              fallbackRank: entry.key + 1,
+            ),
+          )
+          .toList();
+    } catch (e) {
+      CoreLog.error(e);
+      return [];
+    }
   }
 }

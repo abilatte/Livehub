@@ -6,6 +6,8 @@ import 'package:livehub_app/modules/category/detail/category_detail_page.dart';
 import 'package:livehub_app/modules/indexed/indexed_controller.dart';
 import 'package:livehub_app/modules/live_room/live_room_controller.dart';
 import 'package:livehub_app/modules/live_room/live_room_page.dart';
+import 'package:livehub_app/modules/multi_room/multi_room_controller.dart';
+import 'package:livehub_app/modules/multi_room/multi_room_page.dart';
 import 'package:livehub_app/modules/settings/follow_settings_page.dart';
 import 'package:livehub_app/modules/search/search_controller.dart';
 import 'package:livehub_app/modules/search/search_page.dart';
@@ -96,6 +98,14 @@ class AppPages {
           pSite: Get.arguments,
           pRoomId: Get.parameters["roomId"] ?? "",
         ),
+      ),
+    ),
+    //同屏多开
+    GetPage(
+      name: RoutePath.kMultiRoom,
+      page: () => const MultiRoomPage(),
+      binding: BindingsBuilder.put(
+        () => MultiRoomController(Get.arguments ?? const []),
       ),
     ),
     //弹幕设置

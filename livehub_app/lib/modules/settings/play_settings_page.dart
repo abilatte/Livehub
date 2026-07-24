@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:livehub_app/app/app_style.dart';
 import 'package:livehub_app/app/controller/app_settings_controller.dart';
+import 'package:livehub_app/services/mpv_options_utils.dart';
 import 'package:livehub_app/widgets/settings/settings_card.dart';
 import 'package:livehub_app/widgets/settings/settings_menu.dart';
 import 'package:livehub_app/widgets/settings/settings_number.dart';
@@ -103,6 +104,64 @@ class PlaySettingsPage extends GetView<AppSettingsController> {
                       controller.setPlayerForceHttps(e);
                     },
                   ),
+                ),
+                AppStyle.divider,
+                Obx(
+                  () => SettingsMenu<String>(
+                    title: "MPV 性能档位",
+                    value: controller.mpvProfile.value,
+                    valueMap: MpvOptionsUtils.profileLabels,
+                    onChanged: (e) {
+                      controller.setMpvProfile(e);
+                    },
+                  ),
+                ),
+                AppStyle.divider,
+                ListTile(
+                  contentPadding: AppStyle.edgeInsetsH12,
+                  title: const Text("MPV 高级参数"),
+                  subtitle: Text(
+                    controller.mpvAdvancedOptions.value.trim().isEmpty
+                        ? "可选，每行一条 key=value"
+                        : controller.mpvAdvancedOptions.value,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () async {
+                    final result = await showDialog<String>(
+                      context: context,
+                      builder: (ctx) {
+                        final textController = TextEditingController(
+                          text: controller.mpvAdvancedOptions.value,
+                        );
+                        return AlertDialog(
+                          title: const Text("MPV 高级参数"),
+                          content: TextField(
+                            controller: textController,
+                            maxLines: 8,
+                            decoration: const InputDecoration(
+                              hintText: "profile=fast\nhwdec=auto-safe",
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text("取消"),
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(ctx, textController.text),
+                              child: const Text("保存"),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                    if (result != null) {
+                      controller.setMpvAdvancedOptions(result);
+                    }
+                  },
                 ),
               ],
             ),
